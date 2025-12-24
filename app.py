@@ -4,6 +4,7 @@ Deploy on Railway.app
 """
 
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import requests
 import os
 import tempfile
@@ -15,6 +16,7 @@ import uuid
 from book_generator import OrastriaBookGenerator
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
 # ============== CONFIGURATION ==============
 PROKERALA_CLIENT_ID = os.environ.get('PROKERALA_CLIENT_ID')
