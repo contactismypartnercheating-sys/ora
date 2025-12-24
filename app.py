@@ -103,20 +103,6 @@ def parse_chart_data(planet_data, kundli_data):
         'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces'
     ]
     
-    def get_sign(planet_info):
-        """Extract sign from planet data"""
-        # Prokerala returns sign id (0-11) or sign name
-        if 'sign' in planet_info:
-            sign = planet_info['sign']
-            if isinstance(sign, dict):
-                return sign.get('name', zodiac_signs[sign.get('id', 0)])
-            elif isinstance(sign, int):
-                return zodiac_signs[sign]
-            return sign
-        return 'Unknown'
-    
-    planets = planet_data.get('planet_positions', planet_data.get('planets', []))
-    
     chart = {
         'sun_sign': 'Unknown',
         'moon_sign': 'Unknown',
@@ -128,27 +114,52 @@ def parse_chart_data(planet_data, kundli_data):
         'saturn': 'Unknown'
     }
     
-    # Map planet names to our keys
-    planet_map = {
-        'Sun': 'sun_sign',
-        'Moon': 'moon_sign',
-        'Mercury': 'mercury',
-        'Venus': 'venus',
-        'Mars': 'mars',
-        'Jupiter': 'jupiter',
-        'Saturn': 'saturn'
+    # Prokerala returns planet_position as a list
+    planets = planet_data.get('planet_position', [])
+    
+    # Map Prokerala planet IDs to our keys
+    # Prokerala: Sun=0, Moon=1, Mercury=2, Venus=3, Mars=4, Jupiter=5, Saturn=6
+    planet_id_map = {
+        0: 'sun_sign',    # Sun
+        1: 'moon_sign',   # Moon
+        2: 'mercury',     # Mercury
+        3: 'venus',       # Venus
+        4: 'mars',        # Mars
+        5: 'jupiter',     # Jupiter
+        6: 'saturn',      # Saturn
     }
     
     for planet in planets:
-        name = planet.get('name', planet.get('planet', ''))
-        if name in planet_map:
-            chart[planet_map[name]] = get_sign(planet)
+        # Get planet ID
+        planet_id = planet.get('id')
+        if planet_id is None and 'planet' in planet:
+            planet_id = planet['planet'].get('id')
+        
+        # Get the sign
+        sign_data = planet.get('sign', planet.get('rpiasi', {}))
+        if isinstance(sign_data, dict):
+            sign_name = sign_data.get('name')
+            if not sign_name:
+                sign_id = sign_data.get('id', 0)
+                sign_name = zodiac_signs[sign_id] if 0 <= sign_id < 12 else 'Unknown'
+        elif isinstance(sign_data, int):
+            sign_name = zodiac_signs[sign_data] if 0 <= sign_data < 12 else 'Unknown'
+        else:
+            sign_name = str(sign_data) if sign_data else 'Unknown'
+        
+        # Map to our chart
+        if planet_id in planet_id_map:
+            chart[planet_id_map[planet_id]] = sign_name
     
     # Get rising sign from kundli data
     if kundli_data:
         ascendant = kundli_data.get('ascendant', {})
-        if ascendant:
-            chart['rising_sign'] = get_sign(ascendant)
+        if isinstance(ascendant, dict):
+            sign_data = ascendant.get('sign', {})
+            if isinstance(sign_data, dict):
+                chart['rising_sign'] = sign_data.get('name', 'Unknown')
+            elif isinstance(sign_data, int):
+                chart['rising_sign'] = zodiac_signs[sign_data] if 0 <= sign_data < 12 else 'Unknown'
     
     return chart
 
@@ -222,6 +233,51 @@ def geocode_location(place_name):
 def health():
     """Health check endpoint"""
     return jsonify({'status': 'ok', 'service': 'orastria-api'})
+
+
+@app.route('/debug-chart', methods=['POST'])
+def debug_chart():
+    """Debug endpoint to see raw Prokerala response"""
+    try:
+        data = request.json
+        
+        birth_date = data['birth_date']
+        birth_time = data['birth_time']
+        birth_place = data['birth_place']
+        
+        latitude, longitude, timezone = geocode_location(birth_place)
+        
+        # Get token
+        token = get_prokerala_token()
+        
+        # Build datetime
+        datetime_str = f"{birth_date}T{birth_time}:00{get_tz_offset(timezone)}"
+        
+        # Call Prokerala
+        url = "https://api.prokerala.com/v2/astrology/planet-position"
+        headers = {"Authorization": f"Bearer {token}"}
+        params = {
+            "ayanamsa": 1,
+            "coordinates": f"{latitude},{longitude}",
+            "datetime": datetime_str
+        }
+        
+        response = requests.get(url, headers=headers, params=params)
+        planet_data = response.json()
+        
+        # Get kundli too
+        asc_url = "https://api.prokerala.com/v2/astrology/kundli"
+        asc_response = requests.get(asc_url, headers=headers, params=params)
+        kundli_data = asc_response.json() if asc_response.ok else None
+        
+        return jsonify({
+            'datetime_used': datetime_str,
+            'planet_response': planet_data,
+            'kundli_response': kundli_data
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/generate', methods=['POST'])
