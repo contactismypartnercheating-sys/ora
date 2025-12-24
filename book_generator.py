@@ -10,10 +10,59 @@ from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 import math
+import os
+import subprocess
+
+# Find DejaVu fonts dynamically
+def find_font(font_name):
+    """Find font file path across different systems"""
+    possible_paths = [
+        f'/usr/share/fonts/truetype/dejavu/{font_name}',  # Ubuntu/Debian
+        f'/nix/store/*dejavu*/{font_name}',  # Nixpacks
+        f'/usr/share/fonts/dejavu/{font_name}',  # Some Linux
+        f'/app/.fonts/{font_name}',  # Local fallback
+    ]
+    
+    # Try direct paths first
+    for path in possible_paths:
+        if '*' not in path and os.path.exists(path):
+            return path
+    
+    # Use find command as fallback
+    try:
+        result = subprocess.run(
+            ['find', '/nix', '-name', font_name, '-type', 'f'],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.stdout.strip():
+            return result.stdout.strip().split('\n')[0]
+    except:
+        pass
+    
+    try:
+        result = subprocess.run(
+            ['find', '/usr', '-name', font_name, '-type', 'f'],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.stdout.strip():
+            return result.stdout.strip().split('\n')[0]
+    except:
+        pass
+    
+    return None
 
 # Register DejaVu Sans for Unicode symbol support
-pdfmetrics.registerFont(TTFont('DejaVuSans', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'))
-pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'))
+dejavu_regular = find_font('DejaVuSans.ttf')
+dejavu_bold = find_font('DejaVuSans-Bold.ttf')
+
+if dejavu_regular:
+    pdfmetrics.registerFont(TTFont('DejaVuSans', dejavu_regular))
+if dejavu_bold:
+    pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', dejavu_bold))
+
+# Fallback to Helvetica if DejaVu not found
+FONT_REGULAR = 'DejaVuSans' if dejavu_regular else 'Helvetica'
+FONT_BOLD = 'DejaVuSans-Bold' if dejavu_bold else 'Helvetica-Bold'
 
 # Brand Colors
 NAVY = HexColor('#1a1f3c')
@@ -46,7 +95,7 @@ class OrastriaBookV2:
         """Draw zodiac symbol using DejaVu font that supports Unicode"""
         c = self.c
         c.setFillColor(color)
-        c.setFont("DejaVuSans-Bold", size)
+        c.setFont(FONT_BOLD, size)
         symbol = self.get_zodiac_symbol(sign)
         c.drawCentredString(x, y, symbol)
     
@@ -54,7 +103,7 @@ class OrastriaBookV2:
         """Draw sun, moon, or other celestial symbols"""
         c = self.c
         c.setFillColor(color)
-        c.setFont("DejaVuSans-Bold", size)
+        c.setFont(FONT_BOLD, size)
         
         symbols = {
             'sun': '☉',
@@ -79,7 +128,7 @@ class OrastriaBookV2:
         c.rect(margin, margin, self.width - 2*margin, self.height - 2*margin)
         
         # Corner decorations using DejaVu
-        c.setFont("DejaVuSans", 12)
+        c.setFont(FONT_REGULAR, 12)
         c.setFillColor(GOLD)
         corners = [
             (margin + 10, margin + 5),
@@ -95,7 +144,7 @@ class OrastriaBookV2:
         c = self.c
         self.page_num += 1
         c.setFillColor(GOLD)
-        c.setFont("DejaVuSans", 10)
+        c.setFont(FONT_REGULAR, 10)
         c.drawCentredString(self.width / 2, 0.6 * inch, f"— {self.page_num} —")
     
     def new_page(self, with_border=True):
@@ -105,7 +154,7 @@ class OrastriaBookV2:
             self.draw_decorative_border()
             self.add_page_number()
     
-    def draw_text_block(self, text, x, y, width, font="DejaVuSans", size=11, color=black, line_height=14):
+    def draw_text_block(self, text, x, y, width, font=FONT_REGULAR, size=11, color=black, line_height=14):
         """Draw wrapped text block"""
         c = self.c
         c.setFillColor(color)
@@ -152,13 +201,13 @@ class OrastriaBookV2:
         c.rect(0.5*inch, 0.5*inch, self.width - 1*inch, self.height - 1*inch)
         
         # Top decorations
-        c.setFont("DejaVuSans-Bold", 24)
+        c.setFont(FONT_BOLD, 24)
         c.setFillColor(GOLD)
         c.drawCentredString(0.8*inch, self.height - 0.8*inch, '☉')
         c.drawCentredString(self.width - 0.8*inch, self.height - 0.8*inch, '☽')
         
         # Title
-        c.setFont("DejaVuSans-Bold", 32)
+        c.setFont(FONT_BOLD, 32)
         c.drawCentredString(self.width/2, self.height - 1.8*inch, "YOUR COSMIC")
         c.drawCentredString(self.width/2, self.height - 2.25*inch, "BLUEPRINT")
         
@@ -168,12 +217,12 @@ class OrastriaBookV2:
         
         # Person's name
         c.setFillColor(white)
-        c.setFont("DejaVuSans-Bold", 26)
+        c.setFont(FONT_BOLD, 26)
         c.drawCentredString(self.width/2, self.height - 3.2*inch, self.person['name'])
         
         # Birth info
         c.setFillColor(SOFT_GOLD)
-        c.setFont("DejaVuSans", 12)
+        c.setFont(FONT_REGULAR, 12)
         c.drawCentredString(self.width/2, self.height - 3.6*inch, f"{self.person['birth_date']}  •  {self.person['birth_time']}")
         c.drawCentredString(self.width/2, self.height - 3.85*inch, self.person['birth_place'])
         
@@ -189,26 +238,26 @@ class OrastriaBookV2:
         self.draw_zodiac_symbol(self.width/2, center_y - 20, self.person['sun_sign'], size=64, color=GOLD)
         
         # Sign name below
-        c.setFont("DejaVuSans-Bold", 16)
+        c.setFont(FONT_BOLD, 16)
         c.setFillColor(GOLD)
         c.drawCentredString(self.width/2, center_y - 55, self.person['sun_sign'].upper())
         
         # The Big Three line
-        c.setFont("DejaVuSans", 11)
+        c.setFont(FONT_REGULAR, 11)
         c.setFillColor(white)
         big_three = f"☉ Sun: {self.person['sun_sign']}  •  ☽ Moon: {self.person['moon_sign']}  •  ↑ Rising: {self.person['rising_sign']}"
         c.drawCentredString(self.width/2, center_y - 115, big_three)
         
         # Bottom branding
         c.setFillColor(GOLD)
-        c.setFont("DejaVuSans-Bold", 20)
+        c.setFont(FONT_BOLD, 20)
         c.drawCentredString(self.width/2, 1.3*inch, "ORASTRIA")
         
-        c.setFont("DejaVuSans", 10)
+        c.setFont(FONT_REGULAR, 10)
         c.drawCentredString(self.width/2, 1*inch, "Personalized Astrology  •  Written in the Stars")
         
         # Bottom corner moons
-        c.setFont("DejaVuSans", 18)
+        c.setFont(FONT_REGULAR, 18)
         c.drawCentredString(0.8*inch, 0.8*inch, '☽')
         c.drawCentredString(self.width - 0.8*inch, 0.8*inch, '☽')
     
@@ -220,11 +269,11 @@ class OrastriaBookV2:
         
         # Header
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 22)
+        c.setFont(FONT_BOLD, 22)
         c.drawCentredString(self.width/2, self.height - 1.3*inch, "A Message From The Stars")
         
         # Decorative star
-        c.setFont("DejaVuSans", 14)
+        c.setFont(FONT_REGULAR, 14)
         c.setFillColor(GOLD)
         c.drawCentredString(self.width/2, self.height - 1.6*inch, "✧  ✦  ✧")
         
@@ -251,20 +300,20 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         c.roundRect(1*inch, y_box - 0.4*inch, self.width - 2*inch, 1.3*inch, 10, fill=0, stroke=1)
         
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 12)
+        c.setFont(FONT_BOLD, 12)
         c.drawCentredString(self.width/2, y_box + 0.55*inch, "YOUR ASTROLOGICAL RARITY")
         
-        c.setFont("DejaVuSans", 10)
+        c.setFont(FONT_REGULAR, 10)
         c.setFillColor(HexColor('#444444'))
         c.drawCentredString(self.width/2, y_box + 0.25*inch, f"Only 0.23% of {self.person['sun_sign']}s share your exact planetary configuration.")
         c.drawCentredString(self.width/2, y_box, "Your combination of traits is exceptionally uncommon.")
         
         # What's inside
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 14)
+        c.setFont(FONT_BOLD, 14)
         c.drawString(1*inch, 3.1*inch, "Inside Your Personal Book:")
         
-        c.setFont("DejaVuSans", 11)
+        c.setFont(FONT_REGULAR, 11)
         c.setFillColor(black)
         items = [
             "✧  Your Complete Birth Chart Analysis",
@@ -285,10 +334,10 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         c = self.c
         
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 22)
+        c.setFont(FONT_BOLD, 22)
         c.drawCentredString(self.width/2, self.height - 1.3*inch, "Your Birth Chart")
         
-        c.setFont("DejaVuSans", 11)
+        c.setFont(FONT_REGULAR, 11)
         c.setFillColor(HexColor('#666666'))
         c.drawCentredString(self.width/2, self.height - 1.6*inch, "A snapshot of the heavens at the moment you were born")
         
@@ -319,7 +368,7 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         signs = ['Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
                  'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces']
         
-        c.setFont("DejaVuSans-Bold", 14)
+        c.setFont(FONT_BOLD, 14)
         for i, sign in enumerate(signs):
             angle = (75 - i * 30) * math.pi / 180
             x = center_x + 115 * math.cos(angle)
@@ -329,17 +378,17 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
             c.drawCentredString(x, y - 5, symbol)
         
         # Center info
-        c.setFont("DejaVuSans-Bold", 18)
+        c.setFont(FONT_BOLD, 18)
         c.setFillColor(GOLD)
         c.drawCentredString(center_x, center_y + 10, "☉ ☽")
-        c.setFont("DejaVuSans", 9)
+        c.setFont(FONT_REGULAR, 9)
         c.setFillColor(NAVY)
         c.drawCentredString(center_x, center_y - 8, f"{self.person['sun_sign'][:3]} / {self.person['moon_sign'][:3]}")
         
         # Planet positions table
         y_table = 2.5*inch
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 12)
+        c.setFont(FONT_BOLD, 12)
         c.drawString(1*inch, y_table + 0.3*inch, "Your Planetary Positions")
         
         planets = [
@@ -351,7 +400,7 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
             ("♂", "Mars", self.person.get('mars', 'Scorpio')),
         ]
         
-        c.setFont("DejaVuSans", 10)
+        c.setFont(FONT_REGULAR, 10)
         y = y_table
         for symbol, name, sign in planets:
             c.setFillColor(GOLD)
@@ -369,10 +418,10 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         c = self.c
         
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 24)
+        c.setFont(FONT_BOLD, 24)
         c.drawCentredString(self.width/2, self.height - 1.3*inch, "The Big Three")
         
-        c.setFont("DejaVuSans", 11)
+        c.setFont(FONT_REGULAR, 11)
         c.setFillColor(HexColor('#666666'))
         c.drawCentredString(self.width/2, self.height - 1.6*inch, "The three pillars of your astrological identity")
         
@@ -390,22 +439,22 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
             x = 0.75*inch + col_width/2 + i * col_width
             
             # Symbol
-            c.setFont("DejaVuSans-Bold", 36)
+            c.setFont(FONT_BOLD, 36)
             c.setFillColor(GOLD)
             c.drawCentredString(x, y_start, symbol)
             
             # Label
-            c.setFont("DejaVuSans-Bold", 12)
+            c.setFont(FONT_BOLD, 12)
             c.setFillColor(NAVY)
             c.drawCentredString(x, y_start - 0.4*inch, label)
             
             # Sign
-            c.setFont("DejaVuSans-Bold", 14)
+            c.setFont(FONT_BOLD, 14)
             c.setFillColor(GOLD)
             c.drawCentredString(x, y_start - 0.65*inch, sign)
             
             # Descriptions
-            c.setFont("DejaVuSans", 9)
+            c.setFont(FONT_REGULAR, 9)
             c.setFillColor(HexColor('#555555'))
             c.drawCentredString(x, y_start - 0.95*inch, desc1)
             c.drawCentredString(x, y_start - 1.1*inch, desc2)
@@ -417,18 +466,18 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         c.roundRect(1*inch, y_box - 1.2*inch, self.width - 2*inch, 1.4*inch, 10, fill=1, stroke=0)
         
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 11)
+        c.setFont(FONT_BOLD, 11)
         first_name = self.person['name'].split()[0]
         c.drawString(1.2*inch, y_box - 0.1*inch, f"What Your Big Three Reveals About You, {first_name}:")
         
         summary = self.get_big_three_summary()
-        c.setFont("DejaVuSans", 10)
+        c.setFont(FONT_REGULAR, 10)
         c.setFillColor(HexColor('#333333'))
         self.draw_text_block(summary, 1.2*inch, y_box - 0.35*inch, self.width - 2.6*inch, size=10, line_height=13)
         
         # Teaser
         c.setFillColor(GOLD)
-        c.setFont("DejaVuSans", 10)
+        c.setFont(FONT_REGULAR, 10)
         c.drawCentredString(self.width/2, 1.8*inch, "→ Full analysis of each placement continues on the following pages...")
     
     def get_big_three_summary(self):
@@ -460,10 +509,10 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         c = self.c
         
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 22)
+        c.setFont(FONT_BOLD, 22)
         c.drawCentredString(self.width/2, self.height - 1.3*inch, f"Your Sun in {self.person['sun_sign']}")
         
-        c.setFont("DejaVuSans", 11)
+        c.setFont(FONT_REGULAR, 11)
         c.setFillColor(HexColor('#666666'))
         c.drawCentredString(self.width/2, self.height - 1.6*inch, "Your core identity and life force")
         
@@ -474,7 +523,7 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         content = self.get_sun_content()
         
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 13)
+        c.setFont(FONT_BOLD, 13)
         c.drawString(1*inch, self.height - 3.1*inch, "The Essence of Your Being")
         
         y = self.draw_text_block(content['essence'], 1*inch, self.height - 3.35*inch, self.width - 2*inch)
@@ -487,10 +536,10 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         c.roundRect(1*inch, y_box - 0.3*inch, self.width - 2*inch, 1.3*inch, 8, fill=0, stroke=1)
         
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 11)
+        c.setFont(FONT_BOLD, 11)
         c.drawString(1.2*inch, y_box + 0.7*inch, f"Core {self.person['sun_sign']} Traits:")
         
-        c.setFont("DejaVuSans", 10)
+        c.setFont(FONT_REGULAR, 10)
         c.setFillColor(black)
         traits = content['traits']
         y = y_box + 0.4*inch
@@ -501,10 +550,10 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         
         # Strengths
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 12)
+        c.setFont(FONT_BOLD, 12)
         c.drawString(1*inch, 3.8*inch, "Your Natural Strengths")
         
-        c.setFont("DejaVuSans", 10)
+        c.setFont(FONT_REGULAR, 10)
         c.setFillColor(black)
         y = 3.5*inch
         for strength in content['strengths'][:4]:
@@ -513,7 +562,7 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         
         # Teaser
         c.setFillColor(GOLD)
-        c.setFont("DejaVuSans-Bold", 10)
+        c.setFont(FONT_BOLD, 10)
         c.drawString(1*inch, 2.1*inch, "→ [Full shadow work analysis in complete book]")
     
     def get_sun_content(self):
@@ -556,22 +605,22 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         c = self.c
         
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 22)
+        c.setFont(FONT_BOLD, 22)
         c.drawCentredString(self.width/2, self.height - 1.3*inch, f"Your Moon in {self.person['moon_sign']}")
         
-        c.setFont("DejaVuSans", 11)
+        c.setFont(FONT_REGULAR, 11)
         c.setFillColor(HexColor('#666666'))
         c.drawCentredString(self.width/2, self.height - 1.6*inch, "Your emotional nature and inner world")
         
         # Moon symbol - centered better vertically (moved down)
-        c.setFont("DejaVuSans-Bold", 72)
+        c.setFont(FONT_BOLD, 72)
         c.setFillColor(GOLD)
         c.drawCentredString(self.width/2, self.height - 2.8*inch, "☽")
         
         content = self.get_moon_content()
         
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 13)
+        c.setFont(FONT_BOLD, 13)
         c.drawString(1*inch, self.height - 3.6*inch, "Your Emotional Landscape")
         
         self.draw_text_block(content['essence'], 1*inch, self.height - 3.85*inch, self.width - 2*inch)
@@ -585,10 +634,10 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         c.roundRect(1*inch, y_box - 0.3*inch, self.width - 2*inch, box_height, 8, fill=0, stroke=1)
         
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 11)
+        c.setFont(FONT_BOLD, 11)
         c.drawString(1.3*inch, y_box + 1.1*inch, f"What Your {self.person['moon_sign']} Moon Needs:")
         
-        c.setFont("DejaVuSans", 10)
+        c.setFont(FONT_REGULAR, 10)
         c.setFillColor(black)
         y = y_box + 0.75*inch
         for need in content['needs'][:4]:
@@ -597,7 +646,7 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         
         # Teaser - more space from box above
         c.setFillColor(GOLD)
-        c.setFont("DejaVuSans-Bold", 10)
+        c.setFont(FONT_BOLD, 10)
         c.drawString(1*inch, 2*inch, "→ [Your Moon's influence on relationships in full book]")
     
     def get_moon_content(self):
@@ -631,36 +680,36 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         c = self.c
         
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 22)
+        c.setFont(FONT_BOLD, 22)
         c.drawCentredString(self.width/2, self.height - 1.3*inch, "Love & Compatibility")
         
-        c.setFont("DejaVuSans", 11)
+        c.setFont(FONT_REGULAR, 11)
         c.setFillColor(HexColor('#666666'))
         c.drawCentredString(self.width/2, self.height - 1.6*inch, "What the stars reveal about your heart")
         
         # Venus symbol
-        c.setFont("DejaVuSans-Bold", 48)
+        c.setFont(FONT_BOLD, 48)
         c.setFillColor(GOLD)
         c.drawCentredString(self.width/2, self.height - 2.2*inch, "♀")
         
         venus = self.person.get('venus', 'Aquarius')
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 14)
+        c.setFont(FONT_BOLD, 14)
         c.drawCentredString(self.width/2, self.height - 2.6*inch, f"Venus in {venus}")
         
-        c.setFont("DejaVuSans", 10)
+        c.setFont(FONT_REGULAR, 10)
         c.setFillColor(HexColor('#666666'))
         c.drawCentredString(self.width/2, self.height - 2.85*inch, "How you love, what you value, and who you attract")
         
         # Love style text
         c.setFillColor(black)
-        c.setFont("DejaVuSans", 11)
+        c.setFont(FONT_REGULAR, 11)
         love_text = f"With Venus in {venus}, your approach to love is distinctive and shaped by this placement. You attract partners who resonate with your unique energy, and you express affection in ways that reflect your Venus sign's qualities."
         self.draw_text_block(love_text, 1*inch, self.height - 3.2*inch, self.width - 2*inch)
         
         # Compatibility preview - moved up for better spacing
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 13)
+        c.setFont(FONT_BOLD, 13)
         c.drawString(1*inch, 5.8*inch, "Your Top Compatible Signs:")
         
         compatible = [
@@ -677,11 +726,11 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
             
             # Sign with symbol - centered vertically in box
             c.setFillColor(NAVY)
-            c.setFont("DejaVuSans-Bold", 11)
+            c.setFont(FONT_BOLD, 11)
             symbol = self.get_zodiac_symbol(sign)
             c.drawString(1.2*inch, y + 0.08*inch, f"{symbol}  {sign}")
             
-            c.setFont("DejaVuSans", 10)
+            c.setFont(FONT_REGULAR, 10)
             c.setFillColor(HexColor('#666666'))
             c.drawString(3*inch, y + 0.08*inch, match_type)
             
@@ -693,7 +742,7 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
             c.rect(4.8*inch, bar_y, 1.3*inch * (score/100), 0.2*inch, fill=1, stroke=0)
             
             c.setFillColor(NAVY)
-            c.setFont("DejaVuSans-Bold", 9)
+            c.setFont(FONT_BOLD, 9)
             c.drawString(6.2*inch, y + 0.06*inch, f"{score}%")
             
             y -= 0.65*inch
@@ -704,11 +753,11 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         c.roundRect(1*inch, y_lock - 0.5*inch, self.width - 2*inch, 1.1*inch, 10, fill=1, stroke=0)
         
         c.setFillColor(GOLD)
-        c.setFont("DejaVuSans-Bold", 12)
+        c.setFont(FONT_BOLD, 12)
         c.drawCentredString(self.width/2, y_lock + 0.3*inch, "★ In Your Full Book ★")
         
         c.setFillColor(white)
-        c.setFont("DejaVuSans", 10)
+        c.setFont(FONT_REGULAR, 10)
         c.drawCentredString(self.width/2, y_lock, "• Detailed compatibility with ALL 12 signs")
         c.drawCentredString(self.width/2, y_lock - 0.22*inch, "• Your ideal partner's chart characteristics")
     
@@ -719,16 +768,16 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         c = self.c
         
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 22)
+        c.setFont(FONT_BOLD, 22)
         c.drawCentredString(self.width/2, self.height - 1.3*inch, "Career & Life Purpose")
         
-        c.setFont("DejaVuSans", 11)
+        c.setFont(FONT_REGULAR, 11)
         c.setFillColor(HexColor('#666666'))
         c.drawCentredString(self.width/2, self.height - 1.6*inch, "Your destined path to success and fulfillment")
         
         # Career overview
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 13)
+        c.setFont(FONT_BOLD, 13)
         c.drawString(1*inch, self.height - 2.1*inch, "Your Professional Destiny")
         
         career_text = f"Your {self.person['sun_sign']} Sun combined with your other placements creates a unique career blueprint. You thrive in environments that honor your natural gifts and allow authentic self-expression."
@@ -743,11 +792,11 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         c.roundRect(1*inch, y_box - 0.3*inch, self.width - 2*inch, 1.4*inch, 8, fill=0, stroke=1)
         
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 11)
+        c.setFont(FONT_BOLD, 11)
         c.drawString(1.2*inch, y_box + 0.8*inch, "Ideal Career Paths For You:")
         
         careers = self.get_careers()
-        c.setFont("DejaVuSans", 10)
+        c.setFont(FONT_REGULAR, 10)
         c.setFillColor(black)
         y = y_box + 0.5*inch
         for i, career in enumerate(careers[:3]):
@@ -757,10 +806,10 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         
         # Key dates
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 12)
+        c.setFont(FONT_BOLD, 12)
         c.drawString(1*inch, 4.5*inch, "Key Career Dates: 2025")
         
-        c.setFont("DejaVuSans", 10)
+        c.setFont(FONT_REGULAR, 10)
         c.setFillColor(black)
         c.drawString(1.2*inch, 4.2*inch, "→ March 2025: Jupiter brings expansion opportunities")
         c.drawString(1.2*inch, 3.95*inch, "→ July 2025: Career breakthrough window opens")
@@ -768,7 +817,7 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         
         # Teaser
         c.setFillColor(GOLD)
-        c.setFont("DejaVuSans-Bold", 10)
+        c.setFont(FONT_BOLD, 10)
         c.drawString(1*inch, 3*inch, "→ [Complete career timing & monthly forecasts in full book]")
     
     def get_careers(self):
@@ -788,16 +837,16 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         c = self.c
         
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 22)
+        c.setFont(FONT_BOLD, 22)
         c.drawCentredString(self.width/2, self.height - 1.3*inch, "Your Year Ahead: 2025")
         
-        c.setFont("DejaVuSans", 11)
+        c.setFont(FONT_REGULAR, 11)
         c.setFillColor(HexColor('#666666'))
         c.drawCentredString(self.width/2, self.height - 1.6*inch, "Key transits and timing for your success")
         
         # Overview
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 13)
+        c.setFont(FONT_BOLD, 13)
         first_name = self.person['name'].split()[0]
         c.drawString(1*inch, self.height - 2.1*inch, f"2025 Overview for {first_name}")
         
@@ -807,7 +856,7 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         
         # Key dates
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 12)
+        c.setFont(FONT_BOLD, 12)
         c.drawString(1*inch, 6.3*inch, "✧ Key Dates to Watch:")
         
         dates = [
@@ -821,10 +870,10 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         y = 6*inch
         for date, event, color in dates:
             c.setFillColor(color)
-            c.setFont("DejaVuSans-Bold", 10)
+            c.setFont(FONT_BOLD, 10)
             c.drawString(1.2*inch, y, date)
             c.setFillColor(black)
-            c.setFont("DejaVuSans", 10)
+            c.setFont(FONT_REGULAR, 10)
             c.drawString(2.2*inch, y, event)
             y -= 0.28*inch
         
@@ -834,10 +883,10 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         c.roundRect(1*inch, y_lucky - 0.4*inch, self.width - 2*inch, 1.1*inch, 8, fill=1, stroke=0)
         
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 11)
+        c.setFont(FONT_BOLD, 11)
         c.drawString(1.2*inch, y_lucky + 0.4*inch, "Your Lucky Elements for 2025:")
         
-        c.setFont("DejaVuSans", 10)
+        c.setFont(FONT_REGULAR, 10)
         c.setFillColor(black)
         c.drawString(1.3*inch, y_lucky + 0.12*inch, "Lucky Numbers: 3, 7, 9, 12, 21")
         c.drawString(1.3*inch, y_lucky - 0.12*inch, "Lucky Days: Thursday, Sunday")
@@ -849,11 +898,11 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         c.roundRect(1*inch, 2.2*inch, self.width - 2*inch, 0.9*inch, 10, fill=1, stroke=0)
         
         c.setFillColor(GOLD)
-        c.setFont("DejaVuSans-Bold", 11)
+        c.setFont(FONT_BOLD, 11)
         c.drawCentredString(self.width/2, 2.8*inch, "✧ Complete 2025-2026 Forecast ✧")
         
         c.setFillColor(white)
-        c.setFont("DejaVuSans", 10)
+        c.setFont(FONT_REGULAR, 10)
         c.drawCentredString(self.width/2, 2.5*inch, "Month-by-month predictions  •  Best days for major decisions")
     
     # ==================== CTA PAGE ====================
@@ -865,16 +914,16 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         first_name = self.person['name'].split()[0]
         
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 20)
+        c.setFont(FONT_BOLD, 20)
         c.drawCentredString(self.width/2, self.height - 1.4*inch, f"{first_name}, This Is Just The Beginning...")
         
-        c.setFont("DejaVuSans", 11)
+        c.setFont(FONT_REGULAR, 11)
         c.setFillColor(HexColor('#666666'))
         c.drawCentredString(self.width/2, self.height - 1.7*inch, "What you've read is only a preview of your complete cosmic blueprint")
         
         # What's included
         c.setFillColor(NAVY)
-        c.setFont("DejaVuSans-Bold", 14)
+        c.setFont(FONT_BOLD, 14)
         c.drawCentredString(self.width/2, self.height - 2.3*inch, "Your Complete Orastria Book Includes:")
         
         features = [
@@ -892,10 +941,10 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
             c.roundRect(1.2*inch, y - 0.15*inch, self.width - 2.4*inch, 0.5*inch, 5, fill=1, stroke=0)
             
             c.setFillColor(GOLD)
-            c.setFont("DejaVuSans-Bold", 10)
+            c.setFont(FONT_BOLD, 10)
             c.drawString(1.4*inch, y + 0.1*inch, f"✧  {title}")
             c.setFillColor(HexColor('#666666'))
-            c.setFont("DejaVuSans", 9)
+            c.setFont(FONT_REGULAR, 9)
             c.drawString(1.4*inch, y - 0.08*inch, desc)
             
             y -= 0.58*inch
@@ -906,30 +955,30 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         c.roundRect(1*inch, y_cta - 0.9*inch, self.width - 2*inch, 1.9*inch, 15, fill=1, stroke=0)
         
         c.setFillColor(GOLD)
-        c.setFont("DejaVuSans-Bold", 16)
+        c.setFont(FONT_BOLD, 16)
         c.drawCentredString(self.width/2, y_cta + 0.65*inch, "★ Special Offer ★")
         
         c.setFillColor(white)
-        c.setFont("DejaVuSans-Bold", 14)
+        c.setFont(FONT_BOLD, 14)
         c.drawCentredString(self.width/2, y_cta + 0.3*inch, "Get Your Complete Book Now")
         
         # Price
         c.setFillColor(HexColor('#888888'))
-        c.setFont("DejaVuSans", 12)
+        c.setFont(FONT_REGULAR, 12)
         c.drawString(self.width/2 - 50, y_cta - 0.05*inch, "$49.99")
         c.setStrokeColor(HexColor('#888888'))
         c.line(self.width/2 - 55, y_cta, self.width/2 - 10, y_cta)
         
         c.setFillColor(GOLD)
-        c.setFont("DejaVuSans-Bold", 18)
+        c.setFont(FONT_BOLD, 18)
         c.drawString(self.width/2 + 10, y_cta - 0.05*inch, "$24.99")
         
         c.setFillColor(white)
-        c.setFont("DejaVuSans", 10)
+        c.setFont(FONT_REGULAR, 10)
         c.drawCentredString(self.width/2, y_cta - 0.35*inch, "50% OFF — Limited Time Holiday Special")
         
         c.setFillColor(GOLD)
-        c.setFont("DejaVuSans", 9)
+        c.setFont(FONT_REGULAR, 9)
         c.drawCentredString(self.width/2, y_cta - 0.6*inch, "✓ Instant Delivery  ✓ 30-Day Guarantee")
     
     # ==================== BUILD ====================
