@@ -32,9 +32,6 @@ class OrastriaBookV2:
         self.margin = 0.75 * inch
         self.c = canvas.Canvas(output_path, pagesize=letter)
         self.page_num = 0
-
-# Alias for API compatibility
-OrastriaBookGenerator = OrastriaBookV2
         
     def get_zodiac_symbol(self, sign):
         """Return unicode symbol for zodiac sign"""
@@ -993,3 +990,6 @@ if __name__ == "__main__":
     book2.build()
     
     print("\n✨ Done!")
+
+# Alias for API compatibility
+OrastriaBookGenerator = OrastriaBookV2
