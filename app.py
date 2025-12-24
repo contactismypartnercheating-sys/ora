@@ -117,49 +117,33 @@ def parse_chart_data(planet_data, kundli_data):
     # Prokerala returns planet_position as a list
     planets = planet_data.get('planet_position', [])
     
-    # Map Prokerala planet IDs to our keys
-    # Prokerala: Sun=0, Moon=1, Mercury=2, Venus=3, Mars=4, Jupiter=5, Saturn=6
-    planet_id_map = {
-        0: 'sun_sign',    # Sun
-        1: 'moon_sign',   # Moon
-        2: 'mercury',     # Mercury
-        3: 'venus',       # Venus
-        4: 'mars',        # Mars
-        5: 'jupiter',     # Jupiter
-        6: 'saturn',      # Saturn
+    # Map planet names to our keys
+    planet_name_map = {
+        'Sun': 'sun_sign',
+        'Moon': 'moon_sign',
+        'Mercury': 'mercury',
+        'Venus': 'venus',
+        'Mars': 'mars',
+        'Jupiter': 'jupiter',
+        'Saturn': 'saturn',
+        'Ascendant': 'rising_sign'
     }
     
     for planet in planets:
-        # Get planet ID
-        planet_id = planet.get('id')
-        if planet_id is None and 'planet' in planet:
-            planet_id = planet['planet'].get('id')
+        planet_name = planet.get('name', '')
         
-        # Get the sign
-        sign_data = planet.get('sign', planet.get('rpiasi', {}))
-        if isinstance(sign_data, dict):
-            sign_name = sign_data.get('name')
-            if not sign_name:
-                sign_id = sign_data.get('id', 0)
-                sign_name = zodiac_signs[sign_id] if 0 <= sign_id < 12 else 'Unknown'
-        elif isinstance(sign_data, int):
-            sign_name = zodiac_signs[sign_data] if 0 <= sign_data < 12 else 'Unknown'
+        # Get the sign from rasi.id
+        rasi = planet.get('rasi', {})
+        rasi_id = rasi.get('id', -1)
+        
+        if 0 <= rasi_id < 12:
+            sign_name = zodiac_signs[rasi_id]
         else:
-            sign_name = str(sign_data) if sign_data else 'Unknown'
+            sign_name = 'Unknown'
         
         # Map to our chart
-        if planet_id in planet_id_map:
-            chart[planet_id_map[planet_id]] = sign_name
-    
-    # Get rising sign from kundli data
-    if kundli_data:
-        ascendant = kundli_data.get('ascendant', {})
-        if isinstance(ascendant, dict):
-            sign_data = ascendant.get('sign', {})
-            if isinstance(sign_data, dict):
-                chart['rising_sign'] = sign_data.get('name', 'Unknown')
-            elif isinstance(sign_data, int):
-                chart['rising_sign'] = zodiac_signs[sign_data] if 0 <= sign_data < 12 else 'Unknown'
+        if planet_name in planet_name_map:
+            chart[planet_name_map[planet_name]] = sign_name
     
     return chart
 
