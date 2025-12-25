@@ -1,9 +1,9 @@
 [phases.setup]
-nixPkgs = ["python311Full", "gcc", "dejavu_fonts"]
-aptPkgs = ["python3-pip"]
+nixPkgs = ["python311Full", "gcc", "dejavu_fonts", "fontconfig"]
+aptPkgs = ["fonts-dejavu-core", "fonts-dejavu-extra"]
 
 [phases.install]
-cmds = ["pip install -r requirements.txt"]
+cmds = ["pip install -r requirements.txt", "fc-cache -f -v || true"]
 
 [start]
-cmd = "gunicorn app:app --bind 0.0.0.0:$PORT"
+cmd = "gunicorn app:app --timeout 120"
