@@ -158,7 +158,6 @@ def upload_to_b2(file_path, file_name):
             endpoint_url=B2_ENDPOINT,
             aws_access_key_id=B2_KEY_ID,
             aws_secret_access_key=B2_APP_KEY,
-            region_name='us-west-004',
             config=Config(
                 signature_version='s3v4',
                 s3={'addressing_style': 'path'}
@@ -175,7 +174,7 @@ def upload_to_b2(file_path, file_name):
             )
         
         # Generate public URL (for public buckets)
-        public_url = f"https://f004.backblazeb2.com/file/{B2_BUCKET_NAME}/{file_name}"
+        public_url = f"https://f005.backblazeb2.com/file/{B2_BUCKET_NAME}/{file_name}"
         
         return public_url
         
