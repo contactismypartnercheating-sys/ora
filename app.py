@@ -226,6 +226,39 @@ def health():
     return jsonify({'status': 'ok', 'service': 'orastria-api'})
 
 
+@app.route('/debug-fonts', methods=['GET'])
+def debug_fonts():
+    """Debug endpoint to check font availability"""
+    import subprocess
+    
+    # Check for DejaVu fonts
+    font_paths = []
+    search_dirs = ['/nix', '/usr/share/fonts']
+    
+    for search_dir in search_dirs:
+        try:
+            result = subprocess.run(
+                ['find', search_dir, '-name', '*.ttf', '-type', 'f'],
+                capture_output=True, text=True, timeout=30
+            )
+            if result.stdout:
+                fonts = [f for f in result.stdout.strip().split('\n') if 'DejaVu' in f or 'dejavu' in f]
+                font_paths.extend(fonts[:10])  # Limit to 10 per dir
+        except Exception as e:
+            font_paths.append(f"Error searching {search_dir}: {str(e)}")
+    
+    from book_generator import FONT_REGULAR, FONT_BOLD, FONTS_AVAILABLE, dejavu_regular, dejavu_bold
+    
+    return jsonify({
+        'fonts_available': FONTS_AVAILABLE,
+        'font_regular': FONT_REGULAR,
+        'font_bold': FONT_BOLD,
+        'dejavu_regular_path': dejavu_regular,
+        'dejavu_bold_path': dejavu_bold,
+        'found_font_files': font_paths[:20]
+    })
+
+
 @app.route('/debug-chart', methods=['POST'])
 def debug_chart():
     """Debug endpoint to see raw Prokerala response"""
