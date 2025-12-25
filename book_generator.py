@@ -18,29 +18,27 @@ def find_font(font_name):
     """Find font file path across different systems"""
     import glob
     
-    # Direct paths to check first
+    # Get the directory where this script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Direct paths to check first - prioritize local fonts folder
     possible_paths = [
+        os.path.join(script_dir, 'fonts', font_name),  # Local fonts in repo
+        f'/app/fonts/{font_name}',  # Railway app directory
         f'/usr/share/fonts/truetype/dejavu/{font_name}',  # Ubuntu/Debian
         f'/usr/share/fonts/dejavu/{font_name}',  # Some Linux
         f'/usr/share/fonts/TTF/{font_name}',  # Arch
-        f'/app/.fonts/{font_name}',  # Local fallback
-        f'/nix/store/*/share/fonts/truetype/{font_name}',  # Nix pattern
     ]
     
     # Try direct paths first
     for path in possible_paths:
-        if '*' in path:
-            matches = glob.glob(path)
-            if matches:
-                return matches[0]
-        elif os.path.exists(path):
+        if os.path.exists(path):
             return path
     
     # Search in nix store with glob
     nix_patterns = [
         '/nix/store/*dejavu*/share/fonts/truetype/*.ttf',
         '/nix/store/*dejavu*/**/*.ttf',
-        '/nix/store/*/share/fonts/**/*.ttf',
     ]
     
     for pattern in nix_patterns:
@@ -51,22 +49,6 @@ def find_font(font_name):
                     return match
         except:
             pass
-    
-    # Use find command as last resort
-    search_locations = ['/nix/store', '/usr/share/fonts', '/usr/local/share/fonts']
-    for location in search_locations:
-        if os.path.exists(location):
-            try:
-                result = subprocess.run(
-                    ['find', location, '-name', font_name, '-type', 'f'],
-                    capture_output=True, text=True, timeout=30
-                )
-                if result.stdout.strip():
-                    paths = result.stdout.strip().split('\n')
-                    if paths and paths[0]:
-                        return paths[0]
-            except:
-                pass
     
     return None
 
