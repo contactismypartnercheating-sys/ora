@@ -59,7 +59,7 @@ def get_birth_chart(birth_date, birth_time, latitude, longitude, timezone):
     url = "https://api.prokerala.com/v2/astrology/planet-position"
     headers = {"Authorization": f"Bearer {token}"}
     params = {
-        "ayanamsa": 0,  # 0 = Tropical/Western astrology
+        "ayanamsa": 1,  # Lahiri (required by API)
         "coordinates": f"{latitude},{longitude}",
         "datetime": datetime_str
     }
@@ -96,12 +96,16 @@ def get_tz_offset(timezone):
 
 
 def parse_chart_data(planet_data, kundli_data):
-    """Parse Prokerala response into our format"""
+    """Parse Prokerala response into our format - converts to Western/Tropical zodiac"""
     
     zodiac_signs = [
         'Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
         'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces'
     ]
+    
+    # Ayanamsa offset (Lahiri) - approximately 24 degrees in 2024
+    # This converts from Sidereal to Tropical
+    AYANAMSA = 24.0
     
     chart = {
         'sun_sign': 'Unknown',
@@ -129,17 +133,32 @@ def parse_chart_data(planet_data, kundli_data):
         'Ascendant': 'rising_sign'
     }
     
+    def longitude_to_tropical_sign(longitude):
+        """Convert longitude to tropical/Western zodiac sign"""
+        # Add ayanamsa to convert from sidereal to tropical
+        tropical_longitude = (longitude + AYANAMSA) % 360
+        sign_index = int(tropical_longitude / 30)
+        return zodiac_signs[sign_index]
+    
     for planet in planets:
         planet_name = planet.get('name', '')
         
-        # Get the sign from rasi.id
-        rasi = planet.get('rasi', {})
-        rasi_id = rasi.get('id', -1)
+        # Get the longitude (absolute position in degrees)
+        longitude = planet.get('longitude', 0)
         
-        if 0 <= rasi_id < 12:
-            sign_name = zodiac_signs[rasi_id]
+        # Convert to tropical/Western sign
+        if longitude > 0:
+            sign_name = longitude_to_tropical_sign(longitude)
         else:
-            sign_name = 'Unknown'
+            # Fallback to rasi if longitude not available
+            rasi = planet.get('rasi', {})
+            rasi_id = rasi.get('id', -1)
+            if 0 <= rasi_id < 12:
+                # Add ayanamsa offset (roughly 1 sign = ~24 degrees)
+                tropical_rasi_id = (rasi_id + 1) % 12  # Approximate 1 sign offset
+                sign_name = zodiac_signs[tropical_rasi_id]
+            else:
+                sign_name = 'Unknown'
         
         # Map to our chart
         if planet_name in planet_name_map:
