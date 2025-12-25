@@ -230,33 +230,59 @@ def health():
 def debug_fonts():
     """Debug endpoint to check font availability"""
     import subprocess
+    import glob
     
-    # Check for DejaVu fonts
-    font_paths = []
-    search_dirs = ['/nix', '/usr/share/fonts']
+    info = {}
     
-    for search_dir in search_dirs:
+    # Check nix store for dejavu
+    try:
+        result = subprocess.run(
+            ['find', '/nix/store', '-name', '*.ttf', '-path', '*dejavu*'],
+            capture_output=True, text=True, timeout=60
+        )
+        info['nix_dejavu_fonts'] = result.stdout.strip().split('\n')[:10] if result.stdout else []
+    except Exception as e:
+        info['nix_search_error'] = str(e)
+    
+    # Check glob patterns
+    patterns_to_try = [
+        '/nix/store/*dejavu*/**/*.ttf',
+        '/usr/share/fonts/**/*.ttf',
+    ]
+    
+    for pattern in patterns_to_try:
         try:
-            result = subprocess.run(
-                ['find', search_dir, '-name', '*.ttf', '-type', 'f'],
-                capture_output=True, text=True, timeout=30
-            )
-            if result.stdout:
-                fonts = [f for f in result.stdout.strip().split('\n') if 'DejaVu' in f or 'dejavu' in f]
-                font_paths.extend(fonts[:10])  # Limit to 10 per dir
+            matches = glob.glob(pattern, recursive=True)[:5]
+            info[f'glob_{pattern[:30]}'] = matches
         except Exception as e:
-            font_paths.append(f"Error searching {search_dir}: {str(e)}")
+            info[f'glob_error_{pattern[:20]}'] = str(e)
+    
+    # Check if specific paths exist
+    test_paths = [
+        '/nix/store',
+        '/usr/share/fonts',
+        '/usr/share/fonts/truetype',
+    ]
+    info['path_exists'] = {p: os.path.exists(p) for p in test_paths}
+    
+    # List /nix/store dirs containing 'dejavu'
+    try:
+        nix_dirs = [d for d in os.listdir('/nix/store') if 'dejavu' in d.lower()][:5]
+        info['nix_dejavu_dirs'] = nix_dirs
+    except Exception as e:
+        info['nix_dir_error'] = str(e)
     
     from book_generator import FONT_REGULAR, FONT_BOLD, FONTS_AVAILABLE, dejavu_regular, dejavu_bold
     
-    return jsonify({
+    info.update({
         'fonts_available': FONTS_AVAILABLE,
         'font_regular': FONT_REGULAR,
         'font_bold': FONT_BOLD,
         'dejavu_regular_path': dejavu_regular,
         'dejavu_bold_path': dejavu_bold,
-        'found_font_files': font_paths[:20]
     })
+    
+    return jsonify(info)
 
 
 @app.route('/debug-chart', methods=['POST'])
