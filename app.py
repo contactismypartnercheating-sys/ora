@@ -59,7 +59,7 @@ def get_birth_chart(birth_date, birth_time, latitude, longitude, timezone):
     url = "https://api.prokerala.com/v2/astrology/planet-position"
     headers = {"Authorization": f"Bearer {token}"}
     params = {
-        "ayanamsa": 1,  # Lahiri
+        "ayanamsa": 0,  # 0 = Tropical/Western astrology
         "coordinates": f"{latitude},{longitude}",
         "datetime": datetime_str
     }
