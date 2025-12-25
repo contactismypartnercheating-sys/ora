@@ -152,27 +152,35 @@ def parse_chart_data(planet_data, kundli_data):
 def upload_to_b2(file_path, file_name):
     """Upload PDF to Backblaze B2 and return public URL"""
     
-    s3 = boto3.client(
-        's3',
-        endpoint_url=B2_ENDPOINT,
-        aws_access_key_id=B2_KEY_ID,
-        aws_secret_access_key=B2_APP_KEY,
-        config=Config(signature_version='s3v4')
-    )
-    
-    # Upload file
-    s3.upload_file(
-        file_path,
-        B2_BUCKET_NAME,
-        file_name,
-        ExtraArgs={'ContentType': 'application/pdf'}
-    )
-    
-    # Generate public URL
-    # Adjust this based on your B2 bucket settings
-    public_url = f"{B2_ENDPOINT}/{B2_BUCKET_NAME}/{file_name}"
-    
-    return public_url
+    try:
+        s3 = boto3.client(
+            's3',
+            endpoint_url=B2_ENDPOINT,
+            aws_access_key_id=B2_KEY_ID,
+            aws_secret_access_key=B2_APP_KEY,
+            region_name='us-west-004',
+            config=Config(
+                signature_version='s3v4',
+                s3={'addressing_style': 'path'}
+            )
+        )
+        
+        # Upload file
+        with open(file_path, 'rb') as f:
+            s3.put_object(
+                Bucket=B2_BUCKET_NAME,
+                Key=file_name,
+                Body=f,
+                ContentType='application/pdf'
+            )
+        
+        # Generate public URL (for public buckets)
+        public_url = f"https://f004.backblazeb2.com/file/{B2_BUCKET_NAME}/{file_name}"
+        
+        return public_url
+        
+    except Exception as e:
+        raise Exception(f"B2 Upload failed: {str(e)}")
 
 
 # ============== GEOCODING ==============
