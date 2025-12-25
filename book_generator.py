@@ -18,42 +18,59 @@ def find_font(font_name):
     """Find font file path across different systems"""
     possible_paths = [
         f'/usr/share/fonts/truetype/dejavu/{font_name}',  # Ubuntu/Debian
-        f'/nix/store/*dejavu*/{font_name}',  # Nixpacks
         f'/usr/share/fonts/dejavu/{font_name}',  # Some Linux
         f'/app/.fonts/{font_name}',  # Local fallback
     ]
     
     # Try direct paths first
     for path in possible_paths:
-        if '*' not in path and os.path.exists(path):
+        if os.path.exists(path):
             return path
     
-    # Use find command as fallback
+    # Use find command for nix paths
     try:
         result = subprocess.run(
-            ['find', '/nix', '-name', font_name, '-type', 'f'],
-            capture_output=True, text=True, timeout=5
+            ['find', '/nix', '-name', font_name, '-type', 'f', '2>/dev/null'],
+            capture_output=True, text=True, timeout=10, shell=False
         )
         if result.stdout.strip():
-            return result.stdout.strip().split('\n')[0]
+            paths = result.stdout.strip().split('\n')
+            for p in paths:
+                if p and os.path.exists(p):
+                    return p
     except:
         pass
     
+    # Try locate as fallback
     try:
         result = subprocess.run(
-            ['find', '/usr', '-name', font_name, '-type', 'f'],
+            ['locate', font_name],
             capture_output=True, text=True, timeout=5
         )
         if result.stdout.strip():
-            return result.stdout.strip().split('\n')[0]
+            paths = result.stdout.strip().split('\n')
+            for p in paths:
+                if p and os.path.exists(p) and font_name in p:
+                    return p
     except:
         pass
+    
+    # Final fallback - search common locations
+    search_dirs = ['/nix', '/usr/share/fonts', '/usr/local/share/fonts']
+    for search_dir in search_dirs:
+        if os.path.exists(search_dir):
+            for root, dirs, files in os.walk(search_dir):
+                if font_name in files:
+                    return os.path.join(root, font_name)
     
     return None
 
 # Register DejaVu Sans for Unicode symbol support
 dejavu_regular = find_font('DejaVuSans.ttf')
 dejavu_bold = find_font('DejaVuSans-Bold.ttf')
+
+print(f"DejaVu Regular found: {dejavu_regular}")
+print(f"DejaVu Bold found: {dejavu_bold}")
 
 if dejavu_regular:
     pdfmetrics.registerFont(TTFont('DejaVuSans', dejavu_regular))
@@ -63,6 +80,9 @@ if dejavu_bold:
 # Fallback to Helvetica if DejaVu not found
 FONT_REGULAR = 'DejaVuSans' if dejavu_regular else 'Helvetica'
 FONT_BOLD = 'DejaVuSans-Bold' if dejavu_bold else 'Helvetica-Bold'
+FONTS_AVAILABLE = dejavu_regular is not None
+
+print(f"Using fonts: {FONT_REGULAR}, {FONT_BOLD}")
 
 # Brand Colors
 NAVY = HexColor('#1a1f3c')
@@ -83,13 +103,22 @@ class OrastriaBookV2:
         self.page_num = 0
         
     def get_zodiac_symbol(self, sign):
-        """Return unicode symbol for zodiac sign"""
-        symbols = {
-            'Aries': '♈', 'Taurus': '♉', 'Gemini': '♊', 'Cancer': '♋',
-            'Leo': '♌', 'Virgo': '♍', 'Libra': '♎', 'Scorpio': '♏',
-            'Sagittarius': '♐', 'Capricorn': '♑', 'Aquarius': '♒', 'Pisces': '♓'
-        }
-        return symbols.get(sign, '✧')
+        """Return unicode symbol for zodiac sign, with text fallback"""
+        # Unicode symbols (require DejaVu or similar font)
+        if FONTS_AVAILABLE:
+            symbols = {
+                'Aries': '♈', 'Taurus': '♉', 'Gemini': '♊', 'Cancer': '♋',
+                'Leo': '♌', 'Virgo': '♍', 'Libra': '♎', 'Scorpio': '♏',
+                'Sagittarius': '♐', 'Capricorn': '♑', 'Aquarius': '♒', 'Pisces': '♓'
+            }
+        else:
+            # Text fallback for when fonts don't support Unicode
+            symbols = {
+                'Aries': '[Ari]', 'Taurus': '[Tau]', 'Gemini': '[Gem]', 'Cancer': '[Can]',
+                'Leo': '[Leo]', 'Virgo': '[Vir]', 'Libra': '[Lib]', 'Scorpio': '[Sco]',
+                'Sagittarius': '[Sag]', 'Capricorn': '[Cap]', 'Aquarius': '[Aqu]', 'Pisces': '[Pis]'
+            }
+        return symbols.get(sign, '*')
     
     def draw_zodiac_symbol(self, x, y, sign, size=48, color=GOLD):
         """Draw zodiac symbol using DejaVu font that supports Unicode"""
@@ -710,7 +739,7 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
         # Compatibility preview - moved up for better spacing
         c.setFillColor(NAVY)
         c.setFont(FONT_BOLD, 13)
-        c.drawString(1*inch, 5.8*inch, "Your Top Compatible Signs:")
+        c.drawString(1*inch, 6.1*inch, "Your Top Compatible Signs:")
         
         compatible = [
             ('Aquarius', 'Intellectual Match', 92),
@@ -718,7 +747,7 @@ What you hold in your hands is not a generic horoscope. It is a deeply personal 
             ('Libra', 'Harmonious Bond', 86),
         ]
         
-        y = 5.4*inch
+        y = 5.6*inch
         for sign, match_type, score in compatible:
             # Box - taller for better padding
             c.setFillColor(CREAM)
