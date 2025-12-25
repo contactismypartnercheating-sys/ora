@@ -16,52 +16,57 @@ import subprocess
 # Find DejaVu fonts dynamically
 def find_font(font_name):
     """Find font file path across different systems"""
+    import glob
+    
+    # Direct paths to check first
     possible_paths = [
         f'/usr/share/fonts/truetype/dejavu/{font_name}',  # Ubuntu/Debian
         f'/usr/share/fonts/dejavu/{font_name}',  # Some Linux
+        f'/usr/share/fonts/TTF/{font_name}',  # Arch
         f'/app/.fonts/{font_name}',  # Local fallback
+        f'/nix/store/*/share/fonts/truetype/{font_name}',  # Nix pattern
     ]
     
     # Try direct paths first
     for path in possible_paths:
-        if os.path.exists(path):
+        if '*' in path:
+            matches = glob.glob(path)
+            if matches:
+                return matches[0]
+        elif os.path.exists(path):
             return path
     
-    # Use find command for nix paths
-    try:
-        result = subprocess.run(
-            ['find', '/nix', '-name', font_name, '-type', 'f', '2>/dev/null'],
-            capture_output=True, text=True, timeout=10, shell=False
-        )
-        if result.stdout.strip():
-            paths = result.stdout.strip().split('\n')
-            for p in paths:
-                if p and os.path.exists(p):
-                    return p
-    except:
-        pass
+    # Search in nix store with glob
+    nix_patterns = [
+        '/nix/store/*dejavu*/share/fonts/truetype/*.ttf',
+        '/nix/store/*dejavu*/**/*.ttf',
+        '/nix/store/*/share/fonts/**/*.ttf',
+    ]
     
-    # Try locate as fallback
-    try:
-        result = subprocess.run(
-            ['locate', font_name],
-            capture_output=True, text=True, timeout=5
-        )
-        if result.stdout.strip():
-            paths = result.stdout.strip().split('\n')
-            for p in paths:
-                if p and os.path.exists(p) and font_name in p:
-                    return p
-    except:
-        pass
+    for pattern in nix_patterns:
+        try:
+            matches = glob.glob(pattern, recursive=True)
+            for match in matches:
+                if font_name in match:
+                    return match
+        except:
+            pass
     
-    # Final fallback - search common locations
-    search_dirs = ['/nix', '/usr/share/fonts', '/usr/local/share/fonts']
-    for search_dir in search_dirs:
-        if os.path.exists(search_dir):
-            for root, dirs, files in os.walk(search_dir):
-                if font_name in files:
-                    return os.path.join(root, font_name)
+    # Use find command as last resort
+    search_locations = ['/nix/store', '/usr/share/fonts', '/usr/local/share/fonts']
+    for location in search_locations:
+        if os.path.exists(location):
+            try:
+                result = subprocess.run(
+                    ['find', location, '-name', font_name, '-type', 'f'],
+                    capture_output=True, text=True, timeout=30
+                )
+                if result.stdout.strip():
+                    paths = result.stdout.strip().split('\n')
+                    if paths and paths[0]:
+                        return paths[0]
+            except:
+                pass
     
     return None
 
