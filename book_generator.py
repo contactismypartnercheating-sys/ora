@@ -1,10 +1,8 @@
 """
-Orastria Sample Book Generator v3
-DEEPLY PERSONALIZED - Makes readers feel SEEN
-- Rich pre-written zodiac content (not generic)
-- Quiz answer integration
-- One Claude API call for 4 "wow" sentences
-- Blurred preview section for FOMO
+Orastria Sample Book Generator v3 - FIXED VERSION
+- Fixed empty AI insight boxes
+- Fixed empty quiz reflection page
+- Fixed career page gaps
 """
 
 from reportlab.lib.pagesizes import letter
@@ -73,8 +71,6 @@ ZODIAC_SYMBOLS = {
 }
 
 # ==================== DEEP ZODIAC DATA ====================
-# This is the KEY - real, specific content that makes people feel SEEN
-
 ZODIAC_DEEP_DATA = {
     'Aries': {
         'core_essence': "You don't just enter a room—you ignite it. Your Aries Sun gives you a warrior's spirit wrapped in impatience. You start things brilliantly but finishing them? That's where your chart gets complicated.",
@@ -350,19 +346,18 @@ REPLICATE_API_KEY = os.environ.get('REPLICATE_API_KEY', '')
 def generate_ai_insights(name, sun_sign, moon_sign, rising_sign, quiz_data):
     """
     Generate 4 personalized 'wow' sentences using Replicate API (Claude)
-    Cost: ~$0.008 per book
     """
     if not REPLICATE_API_KEY:
         print("⚠️ No REPLICATE_API_KEY found, using fallback insights")
         return get_fallback_insights(name, sun_sign, moon_sign, quiz_data)
     
     # Extract key quiz answers
-    need_to_be_liked = quiz_data.get('need_to_be_liked', '')
-    overthink = quiz_data.get('overthink_relationships', '')
-    life_dreams = quiz_data.get('life_dreams', '')
-    career_question = quiz_data.get('career_question', '')
-    decision_worry = quiz_data.get('decision_worry', '')
-    relationship_status = quiz_data.get('relationship_status', '')
+    need_to_be_liked = quiz_data.get('need_to_be_liked', 'Sometimes')
+    overthink = quiz_data.get('overthink_relationships', 'Sometimes')
+    life_dreams = quiz_data.get('life_dreams', 'finding purpose and meaning')
+    career_question = quiz_data.get('career_question', 'What career will bring fulfillment?')
+    decision_worry = quiz_data.get('decision_worry', 'Somewhat agree')
+    relationship_status = quiz_data.get('relationship_status', 'Unknown')
     
     prompt = f"""You are writing personalized astrology insights for {name}'s sample book.
 
@@ -382,25 +377,25 @@ Write exactly 4 sentences, labeled 1-4. Each should feel like a "holy shit, that
 
 2. Connect their {moon_sign} Moon to how they overthink or process emotions in relationships. Reference their actual patterns.
 
-3. Write about their life dream ({life_dreams}) in a way that hints at deeper psychological meaning. Make them want to know more.
+3. Write about their life dream in a way that hints at deeper psychological meaning. Make them want to know more.
 
-4. Address their career question ({career_question}) by connecting it to their chart. Give a teaser insight that makes them need the full book.
+4. Address their career question by connecting it to their chart. Give a teaser insight that makes them need the full book.
 
 Rules:
 - Be specific, not generic
 - Use "you" language
 - Each sentence should stand alone (they go on different pages)
 - Make them feel SEEN, almost uncomfortably so
-- Keep each sentence under 40 words"""
+- Keep each sentence under 40 words
+- Start each line with the number (1. 2. 3. 4.)"""
 
     try:
-        # Create prediction
         response = requests.post(
             REPLICATE_URL,
             headers={
                 'Authorization': f'Bearer {REPLICATE_API_KEY}',
                 'Content-Type': 'application/json',
-                'Prefer': 'wait'  # Wait for result instead of polling
+                'Prefer': 'wait'
             },
             json={
                 'input': {
@@ -414,7 +409,6 @@ Rules:
         if response.ok:
             result = response.json()
             
-            # Handle different response formats
             if 'output' in result:
                 content = result['output']
                 if isinstance(content, list):
@@ -425,7 +419,15 @@ Rules:
                 content = str(result)
             
             print(f"✅ Replicate API returned insights")
-            return parse_ai_response(content)
+            print(f"📝 Raw AI response:\n{content[:500]}...")  # DEBUG
+            
+            parsed = parse_ai_response(content, name, sun_sign, moon_sign, quiz_data)
+            
+            # DEBUG: Print what we parsed
+            for key, val in parsed.items():
+                print(f"   {key}: {val[:60] if val else 'EMPTY'}...")
+            
+            return parsed
         else:
             print(f"⚠️ Replicate API error: {response.status_code} - {response.text[:200]}")
             return get_fallback_insights(name, sun_sign, moon_sign, quiz_data)
@@ -435,8 +437,8 @@ Rules:
         return get_fallback_insights(name, sun_sign, moon_sign, quiz_data)
 
 
-def parse_ai_response(content):
-    """Parse the 4 numbered sentences from Claude's response"""
+def parse_ai_response(content, name, sun_sign, moon_sign, quiz_data):
+    """Parse the 4 numbered sentences from Claude's response - with better fallbacks"""
     insights = {
         'sun_insight': '',
         'moon_insight': '',
@@ -449,36 +451,55 @@ def parse_ai_response(content):
     
     for line in lines:
         line = line.strip()
-        if line.startswith('1'):
+        if not line:
+            continue
+            
+        # More flexible matching - handle "1.", "1)", "**1.**", etc.
+        if line.startswith('1') or '1.' in line[:5] or '1)' in line[:5]:
             current_num = 'sun_insight'
-            insights[current_num] = line.lstrip('1.').strip()
-        elif line.startswith('2'):
+            # Remove the number prefix
+            clean = line.lstrip('1.*) ').strip()
+            insights[current_num] = clean
+        elif line.startswith('2') or '2.' in line[:5] or '2)' in line[:5]:
             current_num = 'moon_insight'
-            insights[current_num] = line.lstrip('2.').strip()
-        elif line.startswith('3'):
+            clean = line.lstrip('2.*) ').strip()
+            insights[current_num] = clean
+        elif line.startswith('3') or '3.' in line[:5] or '3)' in line[:5]:
             current_num = 'dream_insight'
-            insights[current_num] = line.lstrip('3.').strip()
-        elif line.startswith('4'):
+            clean = line.lstrip('3.*) ').strip()
+            insights[current_num] = clean
+        elif line.startswith('4') or '4.' in line[:5] or '4)' in line[:5]:
             current_num = 'career_insight'
-            insights[current_num] = line.lstrip('4.').strip()
+            clean = line.lstrip('4.*) ').strip()
+            insights[current_num] = clean
         elif current_num and line:
+            # Continuation of previous insight
             insights[current_num] += ' ' + line
+    
+    # CRITICAL: Use fallbacks for any empty insights
+    fallbacks = get_fallback_insights(name, sun_sign, moon_sign, quiz_data)
+    for key in insights:
+        if not insights[key] or len(insights[key]) < 10:
+            print(f"   ⚠️ Using fallback for {key}")
+            insights[key] = fallbacks[key]
     
     return insights
 
 
 def get_fallback_insights(name, sun_sign, moon_sign, quiz_data):
-    """Fallback insights if Claude API is unavailable"""
-    first_name = name.split()[0]
+    """Fallback insights - these ALWAYS have content"""
+    first_name = name.split()[0] if name else 'Friend'
     
-    sun_data = ZODIAC_DEEP_DATA.get(sun_sign, {})
-    moon_data = MOON_DEEP_DATA.get(moon_sign, {})
+    sun_data = ZODIAC_DEEP_DATA.get(sun_sign, ZODIAC_DEEP_DATA['Aries'])
+    moon_data = MOON_DEEP_DATA.get(moon_sign, MOON_DEEP_DATA['Aries'])
+    
+    life_dreams = quiz_data.get('life_dreams', 'something greater')
     
     return {
         'sun_insight': f"Your {sun_sign} Sun means you've likely been told you're 'too much'—{sun_data.get('secret_wound', 'but what others see as excess is simply your authentic intensity')}.",
         'moon_insight': f"With your {moon_sign} Moon, {moon_data.get('emotional_pattern', 'your emotional world runs deeper than others realize')}.",
-        'dream_insight': f"Your dream of '{quiz_data.get('life_dreams', 'something greater')}' isn't random—your chart reveals exactly why this calls to you so deeply.",
-        'career_insight': f"The career fulfillment you're seeking exists—and your {sun_sign} energy points to paths you haven't fully considered yet."
+        'dream_insight': f"Your dream of '{life_dreams}' isn't random—your chart reveals exactly why this calls to you so deeply. The answer lies in your planetary alignments.",
+        'career_insight': f"The career fulfillment you're seeking exists—and your {sun_sign} energy combined with your {moon_sign} emotional needs points to paths you haven't fully considered yet."
     }
 
 
@@ -545,13 +566,19 @@ class OrastriaSampleBookV3:
         self.add_page_number()
     
     def draw_text(self, text, x, y, width, size=11, line_height=14, color=black, font=None):
-        """Draw wrapped text"""
+        """Draw wrapped text - FIXED to handle empty text"""
+        if not text:
+            return y  # Return unchanged y if no text
+            
         c = self.c
         font = font or FONT_REGULAR
         c.setFillColor(color)
         c.setFont(font, size)
         
-        words = text.split()
+        words = str(text).split()
+        if not words:
+            return y
+            
         current_line = ''
         current_y = y
         
@@ -885,22 +912,27 @@ What you're about to read may feel uncomfortably accurate. That's by design."""
         essence = self.sun_data.get('core_essence', f"As a {sun_sign} Sun, you possess unique qualities that shape who you are.")
         y = self.draw_text(essence, 1*inch, self.height - 3.05*inch, self.width - 2*inch, size=10, line_height=13)
         
-        # AI INSIGHT - The "holy shit" moment
-        y -= 0.2*inch
+        # AI INSIGHT - The "holy shit" moment - FIXED: Always draw content
+        y -= 0.3*inch
+        box_height = 1.0*inch  # Slightly taller box
         c.setFillColor(NAVY)
-        c.roundRect(1*inch, y - 0.7*inch, self.width - 2*inch, 0.85*inch, 8, fill=1, stroke=0)
+        c.roundRect(1*inch, y - box_height, self.width - 2*inch, box_height, 8, fill=1, stroke=0)
         
         c.setFillColor(GOLD)
         c.setFont(FONT_BOLD, 9)
-        c.drawString(1.2*inch, y - 0.1*inch, "✧ PERSONAL INSIGHT")
+        c.drawString(1.2*inch, y - 0.15*inch, "✧ PERSONAL INSIGHT")
+        
+        # Get insight with guaranteed fallback
+        ai_sun = self.ai_insights.get('sun_insight', '')
+        if not ai_sun or len(ai_sun) < 10:
+            ai_sun = f"Your {sun_sign} Sun means you've likely been told you're 'too much'—{self.sun_data.get('secret_wound', 'but what others see as excess is simply your authentic intensity')}."
         
         c.setFillColor(white)
         c.setFont(FONT_REGULAR, 10)
-        ai_sun = self.ai_insights.get('sun_insight', f"Your {sun_sign} nature runs deeper than most realize.")
-        self.draw_text(ai_sun, 1.2*inch, y - 0.3*inch, self.width - 2.6*inch, size=10, line_height=12, color=white)
+        self.draw_text(ai_sun, 1.2*inch, y - 0.38*inch, self.width - 2.6*inch, size=10, line_height=13, color=white)
         
-        # Traits box
-        y_box = 4*inch
+        # Traits box - position from bottom
+        y_box = 3.8*inch
         c.setFillColor(CREAM)
         c.roundRect(1*inch, y_box - 0.4*inch, self.width - 2*inch, 1.4*inch, 8, fill=1, stroke=0)
         c.setStrokeColor(GOLD)
@@ -930,7 +962,7 @@ What you're about to read may feel uncomfortably accurate. That's by design."""
     
     # ==================== PAGE 6: MOON SIGN ====================
     def create_moon_sign_page(self):
-        """Moon sign with AI insight"""
+        """Moon sign with AI insight - FIXED"""
         self.new_page()
         c = self.c
         
@@ -957,21 +989,27 @@ What you're about to read may feel uncomfortably accurate. That's by design."""
         essence = self.moon_data.get('essence', f"With your Moon in {moon_sign}, your emotional world has its own unique rhythm.")
         y = self.draw_text(essence, 1*inch, self.height - 3.05*inch, self.width - 2*inch, size=10, line_height=13)
         
-        # AI INSIGHT
-        y -= 0.2*inch
+        # AI INSIGHT - FIXED: Always draw content
+        y -= 0.3*inch
+        box_height = 1.0*inch
         c.setFillColor(NAVY)
-        c.roundRect(1*inch, y - 0.7*inch, self.width - 2*inch, 0.85*inch, 8, fill=1, stroke=0)
+        c.roundRect(1*inch, y - box_height, self.width - 2*inch, box_height, 8, fill=1, stroke=0)
         
         c.setFillColor(GOLD)
         c.setFont(FONT_BOLD, 9)
-        c.drawString(1.2*inch, y - 0.1*inch, "✧ PERSONAL INSIGHT")
+        c.drawString(1.2*inch, y - 0.15*inch, "✧ PERSONAL INSIGHT")
+        
+        # Get insight with guaranteed fallback
+        ai_moon = self.ai_insights.get('moon_insight', '')
+        if not ai_moon or len(ai_moon) < 10:
+            ai_moon = f"With your {moon_sign} Moon, {self.moon_data.get('emotional_pattern', 'your emotional world runs deeper than others realize')}."
         
         c.setFillColor(white)
-        ai_moon = self.ai_insights.get('moon_insight', f"Your {moon_sign} Moon shapes how you process everything.")
-        self.draw_text(ai_moon, 1.2*inch, y - 0.3*inch, self.width - 2.6*inch, size=10, line_height=12, color=white)
+        c.setFont(FONT_REGULAR, 10)
+        self.draw_text(ai_moon, 1.2*inch, y - 0.38*inch, self.width - 2.6*inch, size=10, line_height=13, color=white)
         
-        # Needs box
-        y_box = 4*inch
+        # Needs box - position from bottom
+        y_box = 3.8*inch
         c.setFillColor(CREAM)
         c.roundRect(1*inch, y_box - 0.5*inch, self.width - 2*inch, 1.6*inch, 8, fill=1, stroke=0)
         c.setStrokeColor(GOLD)
@@ -994,13 +1032,15 @@ What you're about to read may feel uncomfortably accurate. That's by design."""
         c.setFont(FONT_BOLD, 10)
         c.drawString(1*inch, 2*inch, "→ [How your Moon affects your relationships in full book]")
     
-    # ==================== PAGE 7: WHAT YOU SHARED ====================
+    # ==================== PAGE 7: WHAT YOU SHARED - FIXED ====================
     def create_quiz_reflection_page(self):
-        """Reference their quiz answers - makes it PERSONAL"""
+        """Reference their quiz answers - FIXED to always show content"""
         self.new_page()
         c = self.c
         
         first_name = self.person.get('name', 'Friend').split()[0]
+        sun_sign = self.person.get('sun_sign', 'Unknown')
+        moon_sign = self.person.get('moon_sign', 'Unknown')
         
         c.setFillColor(NAVY)
         c.setFont(FONT_BOLD, 22)
@@ -1012,57 +1052,59 @@ What you're about to read may feel uncomfortably accurate. That's by design."""
         
         y = self.height - 2.1*inch
         
-        # Reflection 1: Need to be liked
+        # Reflection 1: Need to be liked - always show something
         need_liked = self.quiz.get('need_to_be_liked', '')
+        c.setFillColor(CREAM)
+        c.roundRect(1*inch, y - 0.9*inch, self.width - 2*inch, 1.1*inch, 8, fill=1, stroke=0)
+        
+        c.setFillColor(NAVY)
+        c.setFont(FONT_BOLD, 10)
         if need_liked:
-            c.setFillColor(CREAM)
-            c.roundRect(1*inch, y - 0.9*inch, self.width - 2*inch, 1.1*inch, 8, fill=1, stroke=0)
-            
-            c.setFillColor(NAVY)
-            c.setFont(FONT_BOLD, 10)
             c.drawString(1.2*inch, y - 0.15*inch, f"You said: \"{need_liked}\" to needing others' approval")
-            
-            c.setFont(FONT_REGULAR, 10)
-            c.setFillColor(HexColor('#444444'))
-            sun_sign = self.person.get('sun_sign', 'Your sign')
-            reflection = f"Your {sun_sign} Sun and {self.person.get('moon_sign', 'Moon')} Moon create a specific pattern around approval-seeking that your full book addresses in depth."
-            self.draw_text(reflection, 1.2*inch, y - 0.4*inch, self.width - 2.6*inch, size=9, line_height=12)
-            
-            y -= 1.3*inch
+        else:
+            c.drawString(1.2*inch, y - 0.15*inch, "Your relationship with approval and validation")
         
-        # Reflection 2: Overthinking
+        c.setFont(FONT_REGULAR, 10)
+        c.setFillColor(HexColor('#444444'))
+        reflection = f"Your {sun_sign} Sun and {moon_sign} Moon create a specific pattern around approval-seeking that your full book addresses in depth."
+        self.draw_text(reflection, 1.2*inch, y - 0.4*inch, self.width - 2.6*inch, size=9, line_height=12)
+        
+        y -= 1.3*inch
+        
+        # Reflection 2: Overthinking - always show something
         overthink = self.quiz.get('overthink_relationships', '')
-        if overthink:
-            c.setFillColor(CREAM)
-            c.roundRect(1*inch, y - 0.9*inch, self.width - 2*inch, 1.1*inch, 8, fill=1, stroke=0)
-            
-            c.setFillColor(NAVY)
-            c.setFont(FONT_BOLD, 10)
-            c.drawString(1.2*inch, y - 0.15*inch, f"You said you \"{overthink}\" overthink relationships")
-            
-            c.setFont(FONT_REGULAR, 10)
-            c.setFillColor(HexColor('#444444'))
-            moon_pattern = self.moon_data.get('emotional_pattern', 'Your Moon reveals why.')
-            self.draw_text(moon_pattern, 1.2*inch, y - 0.4*inch, self.width - 2.6*inch, size=9, line_height=12)
-            
-            y -= 1.3*inch
+        c.setFillColor(CREAM)
+        c.roundRect(1*inch, y - 0.9*inch, self.width - 2*inch, 1.1*inch, 8, fill=1, stroke=0)
         
-        # Reflection 3: Life dream with AI insight
-        life_dreams = self.quiz.get('life_dreams', '')
-        if life_dreams:
-            c.setFillColor(NAVY)
-            c.roundRect(1*inch, y - 1.1*inch, self.width - 2*inch, 1.3*inch, 8, fill=1, stroke=0)
-            
-            c.setFillColor(GOLD)
-            c.setFont(FONT_BOLD, 10)
-            c.drawString(1.2*inch, y - 0.15*inch, f"Your Dream: \"{life_dreams}\"")
-            
-            c.setFillColor(white)
-            c.setFont(FONT_REGULAR, 10)
-            dream_insight = self.ai_insights.get('dream_insight', 'Your chart reveals why this calls to you.')
-            self.draw_text(dream_insight, 1.2*inch, y - 0.4*inch, self.width - 2.6*inch, size=10, line_height=12, color=white)
-            
-            y -= 1.5*inch
+        c.setFillColor(NAVY)
+        c.setFont(FONT_BOLD, 10)
+        if overthink:
+            c.drawString(1.2*inch, y - 0.15*inch, f"You said you \"{overthink}\" overthink relationships")
+        else:
+            c.drawString(1.2*inch, y - 0.15*inch, "Your emotional processing patterns")
+        
+        c.setFont(FONT_REGULAR, 10)
+        c.setFillColor(HexColor('#444444'))
+        moon_pattern = self.moon_data.get('emotional_pattern', 'Your Moon reveals why you process emotions the way you do.')
+        self.draw_text(moon_pattern, 1.2*inch, y - 0.4*inch, self.width - 2.6*inch, size=9, line_height=12)
+        
+        y -= 1.3*inch
+        
+        # Reflection 3: Life dream with AI insight - always show something
+        life_dreams = self.quiz.get('life_dreams', 'finding your true purpose')
+        c.setFillColor(NAVY)
+        c.roundRect(1*inch, y - 1.1*inch, self.width - 2*inch, 1.3*inch, 8, fill=1, stroke=0)
+        
+        c.setFillColor(GOLD)
+        c.setFont(FONT_BOLD, 10)
+        c.drawString(1.2*inch, y - 0.15*inch, f"Your Dream: \"{life_dreams}\"")
+        
+        c.setFillColor(white)
+        c.setFont(FONT_REGULAR, 10)
+        dream_insight = self.ai_insights.get('dream_insight', '')
+        if not dream_insight or len(dream_insight) < 10:
+            dream_insight = f"Your dream of '{life_dreams}' isn't random—your chart reveals exactly why this calls to you so deeply."
+        self.draw_text(dream_insight, 1.2*inch, y - 0.4*inch, self.width - 2.6*inch, size=10, line_height=12, color=white)
         
         # Locked teaser
         c.setFillColor(GOLD)
@@ -1151,11 +1193,13 @@ What you're about to read may feel uncomfortably accurate. That's by design."""
         c.drawCentredString(self.width/2, 2.5*inch, "• Compatibility with ALL 12 signs • Your soulmate's chart signature")
         c.drawCentredString(self.width/2, 2.25*inch, "• Red flags your chart attracts • How to break your pattern")
     
-    # ==================== PAGE 9: CAREER + 2025 ====================
+    # ==================== PAGE 9: CAREER + 2025 - FIXED ====================
     def create_career_page(self):
-        """Career insights with AI + key dates"""
+        """Career insights - FIXED layout without gaps"""
         self.new_page()
         c = self.c
+        
+        sun_sign = self.person.get('sun_sign', 'Unknown')
         
         c.setFillColor(NAVY)
         c.setFont(FONT_BOLD, 22)
@@ -1165,20 +1209,27 @@ What you're about to read may feel uncomfortably accurate. That's by design."""
         c.setFillColor(HexColor('#666666'))
         c.drawCentredString(self.width/2, self.height - 1.55*inch, "Purpose, timing, and opportunity")
         
-        # Career question they asked + AI insight
+        y = self.height - 2.0*inch
+        
+        # Career insight box - ALWAYS show
         career_q = self.quiz.get('career_question', '')
+        c.setFillColor(CREAM)
+        c.roundRect(1*inch, y - 1.0*inch, self.width - 2*inch, 1.1*inch, 8, fill=1, stroke=0)
+        
+        c.setFillColor(NAVY)
+        c.setFont(FONT_BOLD, 10)
         if career_q:
-            c.setFillColor(CREAM)
-            c.roundRect(1*inch, self.height - 2.8*inch, self.width - 2*inch, 1*inch, 8, fill=1, stroke=0)
-            
-            c.setFillColor(NAVY)
-            c.setFont(FONT_BOLD, 10)
-            c.drawString(1.2*inch, self.height - 2*inch, f"You asked: \"{career_q[:50]}...\"")
-            
-            c.setFillColor(HexColor('#444444'))
-            c.setFont(FONT_REGULAR, 10)
-            career_insight = self.ai_insights.get('career_insight', 'Your chart points to specific paths for fulfillment.')
-            self.draw_text(career_insight, 1.2*inch, self.height - 2.25*inch, self.width - 2.6*inch, size=9, line_height=12)
+            display_q = career_q[:50] + "..." if len(career_q) > 50 else career_q
+            c.drawString(1.2*inch, y - 0.15*inch, f"You asked: \"{display_q}\"")
+        else:
+            c.drawString(1.2*inch, y - 0.15*inch, f"Your {sun_sign} Career Path")
+        
+        c.setFillColor(HexColor('#444444'))
+        c.setFont(FONT_REGULAR, 10)
+        career_insight = self.ai_insights.get('career_insight', '')
+        if not career_insight or len(career_insight) < 10:
+            career_insight = f"The career fulfillment you're seeking exists—and your {sun_sign} energy points to paths you haven't fully considered yet."
+        self.draw_text(career_insight, 1.2*inch, y - 0.4*inch, self.width - 2.6*inch, size=9, line_height=12)
         
         # Ideal careers
         c.setFillColor(NAVY)
@@ -1345,32 +1396,25 @@ OrastriaBookGenerator = OrastriaSampleBookV3
 
 # ==================== TESTING ====================
 if __name__ == "__main__":
-    print("🌟 Testing Orastria Sample Book v3...")
+    print("🌟 Testing Orastria Sample Book v3 FIXED...")
     
     test_person = {
-        'name': 'Sarah Mitchell',
-        'birth_date': 'March 15, 1995',
-        'birth_time': '2:30 PM',
-        'birth_place': 'Los Angeles, California',
+        'name': 'Hassan ElHouadi',
+        'birth_date': 'February 28, 1955',
+        'birth_time': '05:20 PM',
+        'birth_place': 'Paris, France',
         'sun_sign': 'Pisces',
-        'moon_sign': 'Scorpio',
-        'rising_sign': 'Cancer',
-        'venus': 'Aquarius',
-        'mars': 'Leo',
-        'mercury': 'Pisces',
+        'moon_sign': 'Taurus',
+        'rising_sign': 'Leo',
+        'venus': 'Capricorn',
+        'mars': 'Taurus',
+        'mercury': 'Aquarius',
     }
     
-    test_quiz = {
-        'need_to_be_liked': 'Always',
-        'overthink_relationships': 'Often',
-        'life_dreams': 'Creating a loving family',
-        'career_question': 'What job will bring me joy and fulfillment?',
-        'decision_worry': 'Somewhat agree',
-        'relationship_status': 'Single',
-        'outlook': 'Optimistic',
-    }
+    # Test with empty quiz data (common scenario)
+    test_quiz = {}
     
-    book = OrastriaSampleBookV3('/tmp/test_sample_v3.pdf', test_person, test_quiz)
+    book = OrastriaSampleBookV3('/tmp/test_sample_fixed.pdf', test_person, test_quiz)
     book.build()
     
     print("\n✨ Test complete!")
