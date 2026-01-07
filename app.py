@@ -202,6 +202,35 @@ def upload_to_b2(file_path, file_name):
 
 
 # ============== GEOCODING ==============
+def get_timezone_from_coords(lat, lon):
+    """Get timezone from coordinates using timezonefinder (offline)"""
+    try:
+        from timezonefinder import TimezoneFinder
+        tf = TimezoneFinder()
+        timezone = tf.timezone_at(lat=lat, lng=lon)
+        if timezone:
+            print(f"✅ Timezone found: {timezone}")
+            return timezone
+    except ImportError:
+        print("⚠️ timezonefinder not installed")
+    except Exception as e:
+        print(f"⚠️ timezonefinder error: {e}")
+    
+    # Fallback based on longitude
+    if lon < -100:
+        return 'America/Los_Angeles'
+    elif lon < -30:
+        return 'America/New_York'
+    elif lon < 30:
+        return 'Europe/Paris'
+    elif lon < 60:
+        return 'Asia/Dubai'
+    elif lon < 100:
+        return 'Asia/Kolkata'
+    else:
+        return 'Asia/Tokyo'
+
+
 def geocode_location(place_name):
     """
     Get latitude, longitude, and timezone for a place
@@ -226,17 +255,10 @@ def geocode_location(place_name):
     lat = float(results[0]['lat'])
     lon = float(results[0]['lon'])
     
-    # Get timezone using another free API
-    tz_url = f"https://timeapi.io/api/TimeZone/coordinate?latitude={lat}&longitude={lon}"
-    tz_response = requests.get(tz_url)
-    
-    if tz_response.ok:
-        timezone = tz_response.json().get('timeZone', 'UTC')
-    else:
-        timezone = 'UTC'
+    # Get timezone using offline library (no API call)
+    timezone = get_timezone_from_coords(lat, lon)
     
     return lat, lon, timezone
-
 
 # ============== API ENDPOINTS ==============
 @app.route('/health', methods=['GET'])
