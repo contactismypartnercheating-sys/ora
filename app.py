@@ -402,6 +402,7 @@ def generate_book():
         birth_place = data['birth_place']
         book_type = data.get('book_type', 'sample')
         email = data.get('email', '')
+        user_id = data.get('user_id', '')
         
         # Step 1: Geocode the birth place
         latitude, longitude, timezone = geocode_location(birth_place)
@@ -435,7 +436,7 @@ def generate_book():
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
             tmp_path = tmp.name
         
-        generator = OrastriaBookGenerator(tmp_path, person_data, book_type=book_type)
+        generator = OrastriaBookGenerator(tmp_path, person_data, book_type=book_type, user_id=user_id)
         generator.build()
         
         # Step 6: Upload to Backblaze
