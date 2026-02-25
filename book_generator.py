@@ -13,6 +13,7 @@ import os
 import textwrap
 import urllib.request
 import random
+import requests
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
@@ -20,6 +21,144 @@ from reportlab.lib.colors import HexColor, white, black, Color
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+
+# ============================================================
+# PROKERALA CONFIG
+# ============================================================
+
+PROKERALA_CLIENT_ID     = os.environ.get('PROKERALA_CLIENT_ID', '')
+PROKERALA_CLIENT_SECRET = os.environ.get('PROKERALA_CLIENT_SECRET', '')
+
+ZODIAC_SIGNS = ['Aries','Taurus','Gemini','Cancer','Leo','Virgo',
+                'Libra','Scorpio','Sagittarius','Capricorn','Aquarius','Pisces']
+AYANAMSA = 24.0
+
+
+def get_prokerala_token():
+    url  = "https://api.prokerala.com/token"
+    data = {'grant_type':'client_credentials',
+            'client_id': PROKERALA_CLIENT_ID,
+            'client_secret': PROKERALA_CLIENT_SECRET}
+    r = requests.post(url, data=data)
+    r.raise_for_status()
+    return r.json()['access_token']
+
+
+def longitude_to_tropical_sign(longitude):
+    return ZODIAC_SIGNS[int(((longitude + AYANAMSA) % 360) / 30)]
+
+
+def get_tz_offset(timezone):
+    offsets = {
+        'Asia/Beirut':'+02:00','America/New_York':'-05:00','America/Chicago':'-06:00',
+        'America/Los_Angeles':'-08:00','America/Denver':'-07:00','Europe/London':'+00:00',
+        'Europe/Paris':'+01:00','Europe/Berlin':'+01:00','Europe/Rome':'+01:00',
+        'Europe/Madrid':'+01:00','Europe/Moscow':'+03:00','Asia/Dubai':'+04:00',
+        'Asia/Kolkata':'+05:30','Asia/Shanghai':'+08:00','Asia/Tokyo':'+09:00',
+        'Australia/Sydney':'+11:00','Pacific/Auckland':'+13:00','UTC':'+00:00'
+    }
+    return offsets.get(timezone, '+00:00')
+
+
+def guess_timezone_from_coords(lat, lon, place_name):
+    place_lower = place_name.lower()
+    if 'paris' in place_lower or 'france' in place_lower: return 'Europe/Paris'
+    if 'london' in place_lower or 'uk' in place_lower:    return 'Europe/London'
+    if 'new york' in place_lower:                          return 'America/New_York'
+    if 'los angeles' in place_lower:                       return 'America/Los_Angeles'
+    if 'chicago' in place_lower:                           return 'America/Chicago'
+    if 'dubai' in place_lower or 'uae' in place_lower:    return 'Asia/Dubai'
+    if 'tokyo' in place_lower or 'japan' in place_lower:  return 'Asia/Tokyo'
+    if 'sydney' in place_lower or 'australia' in place_lower: return 'Australia/Sydney'
+    if 'berlin' in place_lower or 'germany' in place_lower: return 'Europe/Berlin'
+    if 'moscow' in place_lower or 'russia' in place_lower: return 'Europe/Moscow'
+    if 'beijing' in place_lower or 'china' in place_lower: return 'Asia/Shanghai'
+    if 'india' in place_lower or 'mumbai' in place_lower or 'delhi' in place_lower: return 'Asia/Kolkata'
+    if 'beirut' in place_lower or 'lebanon' in place_lower: return 'Asia/Beirut'
+    if lon < -100: return 'America/Los_Angeles'
+    elif lon < -60: return 'America/New_York'
+    elif lon < 0:   return 'Europe/London'
+    elif lon < 30:  return 'Europe/Paris'
+    elif lon < 60:  return 'Asia/Dubai'
+    elif lon < 100: return 'Asia/Kolkata'
+    elif lon < 130: return 'Asia/Shanghai'
+    else:           return 'Asia/Tokyo'
+
+
+def get_timezone_from_coords(lat, lon, place_name):
+    try:
+        from timezonefinder import TimezoneFinder
+        tz = TimezoneFinder().timezone_at(lat=lat, lng=lon)
+        if tz: return tz
+    except Exception:
+        pass
+    return guess_timezone_from_coords(lat, lon, place_name)
+
+
+def geocode_location(place_name):
+    url = "https://nominatim.openstreetmap.org/search"
+    params = {'q': place_name, 'format': 'json', 'limit': 1}
+    r = requests.get(url, params=params, headers={'User-Agent':'OrastriaApp/1.0'}, timeout=30)
+    r.raise_for_status()
+    results = r.json()
+    if not results:
+        raise ValueError(f"Could not find location: {place_name}")
+    lat = float(results[0]['lat'])
+    lon = float(results[0]['lon'])
+    return lat, lon, get_timezone_from_coords(lat, lon, place_name)
+
+
+def parse_chart_data(planet_data, kundli_data):
+    chart = {k: 'Aries' for k in ['sun_sign','moon_sign','rising_sign','mercury',
+                                    'venus','mars','jupiter','saturn','north_node']}
+    name_map = {'Sun':'sun_sign','Moon':'moon_sign','Mercury':'mercury','Venus':'venus',
+                'Mars':'mars','Jupiter':'jupiter','Saturn':'saturn',
+                'Rahu':'north_node','Ascendant':'rising_sign'}
+    for planet in planet_data.get('planet_position', []):
+        nm  = planet.get('name', '')
+        lon = planet.get('longitude', 0)
+        if lon > 0:
+            sign = longitude_to_tropical_sign(lon)
+        else:
+            rasi_id = planet.get('rasi', {}).get('id', -1)
+            sign = ZODIAC_SIGNS[(rasi_id + 1) % 12] if 0 <= rasi_id < 12 else 'Aries'
+        if nm in name_map:
+            chart[name_map[nm]] = sign
+    if kundli_data:
+        asc_lon = kundli_data.get('ascendant', {}).get('longitude', 0)
+        if asc_lon > 0:
+            chart['rising_sign'] = longitude_to_tropical_sign(asc_lon)
+    return chart
+
+
+def get_chart_from_prokerala(birth_date, birth_time, birth_place):
+    if not PROKERALA_CLIENT_ID or not PROKERALA_CLIENT_SECRET:
+        print("⚠️  Prokerala credentials not set")
+        return None
+    try:
+        print(f"📍 Geocoding: {birth_place}")
+        lat, lon, tz = geocode_location(birth_place)
+        token = get_prokerala_token()
+        datetime_str = f"{birth_date}T{birth_time}:00{get_tz_offset(tz)}"
+        headers = {"Authorization": f"Bearer {token}"}
+        params  = {"ayanamsa": 1, "coordinates": f"{lat},{lon}", "datetime": datetime_str}
+
+        r = requests.get("https://api.prokerala.com/v2/astrology/planet-position",
+                         headers=headers, params=params, timeout=30)
+        r.raise_for_status()
+        planet_data = r.json()['data']
+
+        asc_r = requests.get("https://api.prokerala.com/v2/astrology/kundli",
+                              headers=headers, params=params, timeout=30)
+        kundli_data = asc_r.json()['data'] if asc_r.ok else None
+
+        chart = parse_chart_data(planet_data, kundli_data)
+        print(f"✅ Chart: Sun={chart['sun_sign']}, Moon={chart['moon_sign']}, Rising={chart['rising_sign']}")
+        return chart
+    except Exception as e:
+        print(f"❌ Prokerala error: {e}")
+        return None
+
 
 # ============================================================
 # FONT MANAGEMENT (identical to full book)
@@ -227,12 +366,46 @@ class OrastriaBookGenerator:
         self.page_num = 0
         self.c = canvas.Canvas(output_path, pagesize=letter)
 
-        # person fields
-        self.name       = person_data.get('name', 'Friend')
+        # person fields — always capitalize
+        raw_name        = person_data.get('name', 'Friend')
+        self.name       = raw_name.title()
         self.first_name = self.name.split()[0]
         self.sun_sign   = person_data.get('sun_sign',   'Aries')
         self.moon_sign  = person_data.get('moon_sign',  'Aries')
         self.rising_sign= person_data.get('rising_sign','Aries')
+
+        # Try to fetch full chart from Prokerala (same as full book)
+        birth_date  = person_data.get('birth_date', '')
+        birth_time  = person_data.get('birth_time', '12:00')
+        birth_place = person_data.get('birth_place', '')
+
+        # Normalise AM/PM time to 24h
+        time_period = person_data.get('birth_time_period', '').upper()
+        if time_period == 'PM' and ':' in birth_time:
+            parts = birth_time.split(':')
+            h = int(parts[0])
+            if h != 12: h += 12
+            birth_time = f"{h:02d}:{parts[1]}"
+        elif time_period == 'AM' and ':' in birth_time:
+            parts = birth_time.split(':')
+            h = int(parts[0])
+            if h == 12: h = 0
+            birth_time = f"{h:02d}:{parts[1]}"
+
+        chart = None
+        if birth_date and birth_place:
+            chart = get_chart_from_prokerala(birth_date, birth_time, birth_place)
+
+        if chart:
+            # Prokerala gives us everything — override whatever was passed in
+            self.sun_sign    = chart.get('sun_sign',    self.sun_sign)
+            self.moon_sign   = chart.get('moon_sign',   self.moon_sign)
+            self.rising_sign = chart.get('rising_sign', self.rising_sign)
+            # Merge into person_data so the planet table picks it up
+            for key in ('mercury','venus','mars','jupiter','saturn','north_node'):
+                person_data[key] = chart.get(key, person_data.get(key, ''))
+        else:
+            print("⚠️  Using chart data from person_data (no Prokerala)")
 
         # checkout
         uid = (user_id or '').strip()
@@ -505,18 +678,20 @@ class OrastriaBookGenerator:
         c.setFillColor(CREAM)
         c.roundRect(table_x, y_table - 1.6*inch, table_w, 1.8*inch, 5, fill=1, stroke=0)
 
-        planets = [
+        planets_raw = [
             ("☉","Sun",       self.sun_sign),
             ("☽","Moon",      self.moon_sign),
             ("↑","Rising",    self.rising_sign),
-            ("☿","Mercury",   self.person.get('mercury','Unknown')),
-            ("♀","Venus",     self.person.get('venus','Unknown')),
-            ("♂","Mars",      self.person.get('mars','Unknown')),
-            ("♃","Jupiter",   self.person.get('jupiter','Unknown')),
-            ("♄","Saturn",    self.person.get('saturn','Unknown')),
-            ("MC","Midheaven",self.person.get('midheaven','Unknown')),
-            ("☊","North Node",self.person.get('north_node','Unknown')),
+            ("☿","Mercury",   self.person.get('mercury','')),
+            ("♀","Venus",     self.person.get('venus','')),
+            ("♂","Mars",      self.person.get('mars','')),
+            ("♃","Jupiter",   self.person.get('jupiter','')),
+            ("♄","Saturn",    self.person.get('saturn','')),
+            ("MC","Midheaven",self.person.get('midheaven','')),
+            ("☊","North Node",self.person.get('north_node','')),
         ]
+        # Only show rows where we actually have data
+        planets = [(s, n, v) for s, n, v in planets_raw if v and v.lower() not in ('', 'unknown')]
         col1_x = table_x + 20
         col2_x = table_x + table_w/2 + 20
         for i, (sym, nm, sign) in enumerate(planets):
@@ -640,11 +815,15 @@ class OrastriaBookGenerator:
         # summary insight box
         sun_d  = ZODIAC_DEEP.get(self.sun_sign, {})
         moon_d = MOON_DEEP.get(self.moon_sign, {})
-        summary = (f"Your {self.sun_sign} Sun means {sun_d.get('essence','you have rare gifts')[:120]}. "
-                   f"Combined with your {self.moon_sign} Moon, {moon_d.get('pattern','your emotional world runs deeper than most')[:100]}.")
+        essence = sun_d.get('essence', '')
+        # Use first sentence only for the insight box — clean cut
+        first_sentence = essence.split('.')[0] + '.' if '.' in essence else essence[:100]
+        moon_pattern = moon_d.get('pattern', '')
+        moon_sentence = moon_pattern.split('.')[0] + '.' if '.' in moon_pattern else moon_pattern[:100]
         y = self.draw_key_insight_box(
             f"What This Means For You, {self.first_name.upper()}",
-            [summary[:90], summary[90:180] if len(summary)>90 else ''],
+            [f"Sun in {self.sun_sign}: {first_sentence[:85]}",
+             f"Moon in {self.moon_sign}: {moon_sentence[:85]}"],
             y)
 
         c.showPage()
@@ -810,10 +989,8 @@ class OrastriaBookGenerator:
         c.roundRect(self.margin, y - lock_h, self.width - 2*self.margin, lock_h, 8, fill=0, stroke=1)
 
         c.setFillColor(NAVY)
-        c.setFont(FONT_SYMBOL_BOLD, 18)
-        c.drawCentredString(self.width/2, y - 0.28*inch, "🔒")
         c.setFont(FONT_BODY_BOLD, 11)
-        c.drawCentredString(self.width/2, y - 0.52*inch, "The full pattern + how to break it — in your complete book")
+        c.drawCentredString(self.width/2, y - 0.35*inch, "[LOCKED]  The full pattern + how to break it — in your complete book")
         c.setFillColor(HexColor('#888888'))
         c.setFont(FONT_BODY, 9)
         c.drawCentredString(self.width/2, y - 0.72*inch,
@@ -906,10 +1083,9 @@ class OrastriaBookGenerator:
                 c.setFillColor(HexColor('#c8c4bc'))
                 c.roundRect(self.margin + 28, y - 28, 160, 28, 3, fill=1, stroke=0)
 
-                # Lock icon
                 c.setFillColor(HexColor('#888888'))
-                c.setFont(FONT_SYMBOL, 10)
-                c.drawCentredString(self.margin + 28 + 80, y - 14, '🔒')
+                c.setFont(FONT_BODY_BOLD, 9)
+                c.drawCentredString(self.margin + 28 + 80, y - 14, '[LOCKED]')
 
                 # Opaque solid block over bar area
                 c.setFillColor(HexColor('#c8c4bc'))
@@ -1069,7 +1245,7 @@ class OrastriaBookGenerator:
         c.roundRect(box_x, start_y - total_h, self.width - 2*self.margin, total_h, 8, fill=0, stroke=1)
 
         c.setFillColor(GOLD); c.setFont(FONT_BODY_BOLD, 10)
-        c.drawCentredString(self.width/2, start_y - 0.22*inch, "🔒  LOCKED IN YOUR SAMPLE")
+        c.drawCentredString(self.width/2, start_y - 0.22*inch, ">> LOCKED IN YOUR SAMPLE <<")
         c.setStrokeColor(HexColor('#3a4060')); c.setLineWidth(0.5)
         c.line(box_x + 20, start_y - 0.36*inch, self.width - box_x - 20, start_y - 0.36*inch)
 
